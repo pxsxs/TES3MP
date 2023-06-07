@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+set(CMAKE_CXX_CLANG_TIDY "")
+
 # Like `FetchContent_MakeAvailable` but passes EXCLUDE_FROM_ALL to `add_subdirectory`.
 macro(FetchContent_MakeAvailableExcludeFromAll)
     foreach(contentName IN ITEMS ${ARGV})
@@ -145,11 +147,11 @@ if(NOT OPENMW_USE_SYSTEM_OSG)
         endif()
     endif()
 
-    # branch OpenSceneGraph-3.6 on 23 Jan 2021.
+    # OSGoS branch 3.6
     include(FetchContent)
     FetchContent_Declare(osg
-        URL https://github.com/OpenMW/osg/archive/e65f47c4ab3a0b53cc19f517961671e5f840a08d.zip
-        URL_HASH MD5=0c967fe48d80744f6956f6b0b67ef7c6
+        URL https://github.com/OpenMW/osg/archive/01cc2b585c8456a4ff843066b7e1a8715558289f.zip
+        URL_HASH MD5=f1496c5ce32f733581e84568cf2712af
         SOURCE_DIR fetched/osg
     )
     FetchContent_MakeAvailableExcludeFromAll(osg)
@@ -185,4 +187,42 @@ if(NOT OPENMW_USE_SYSTEM_RECASTNAVIGATION)
         SOURCE_DIR fetched/recastnavigation
     )
     FetchContent_MakeAvailableExcludeFromAll(recastnavigation)
+endif()
+
+if (NOT OPENMW_USE_SYSTEM_SQLITE3)
+    include(FetchContent)
+    FetchContent_Declare(sqlite3
+        URL https://www.sqlite.org/2021/sqlite-amalgamation-3360000.zip
+        URL_HASH MD5=c5d360c74111bafae1b704721ff18fe6
+        SOURCE_DIR fetched/sqlite3
+    )
+    FetchContent_MakeAvailableExcludeFromAll(sqlite3)
+
+    add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+    target_include_directories(sqlite3 INTERFACE ${sqlite3_SOURCE_DIR}/)
+    if (UNIX)
+        target_link_libraries(sqlite3 ${CMAKE_DL_LIBS})
+    endif()
+    add_library(SQLite::SQLite3 ALIAS sqlite3)
+
+    set(SQLite3_INCLUDE_DIR ${sqlite3_SOURCE_DIR}/ PARENT_SCOPE)
+    set(SQLite3_LIBRARY sqlite3 PARENT_SCOPE)
+endif()
+
+add_subdirectory(smhasher)
+
+if (BUILD_BENCHMARKS AND NOT OPENMW_USE_SYSTEM_BENCHMARK)
+    cmake_minimum_required(VERSION 3.11)
+
+    set(BENCHMARK_ENABLE_TESTING OFF)
+    set(BENCHMARK_ENABLE_INSTALL OFF)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
+
+    include(FetchContent)
+    FetchContent_Declare(benchmark
+        URL https://github.com/google/benchmark/archive/refs/tags/v1.5.2.zip
+        URL_HASH MD5=49395b757a7c4656d70f1328d93efd00
+        SOURCE_DIR fetched/benchmark
+    )
+    FetchContent_MakeAvailableExcludeFromAll(benchmark)
 endif()

@@ -7,21 +7,7 @@
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_ScrollView.h>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-#include "../mwworld/cellstore.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include <components/settings/settings.hpp>
-#include <components/openmw-mp/TimedLog.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -30,7 +16,6 @@
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
 
-#include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwmechanics/actorutil.hpp"
 
@@ -63,40 +48,15 @@ namespace MWGui
                 dropped = world->dropObjectOnGround(world->getPlayerPtr(), item.mBase, count);
             dropped.getCellRef().setOwner("");
 
-            /*
-                Start of tes3mp addition
-
-                Send an ID_OBJECT_PLACE packet every time an object is dropped into the world from
-                the inventory screen
-            */
-            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-            objectList->reset();
-            objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-            objectList->addObjectPlace(dropped, true);
-            objectList->sendObjectPlace();
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp change (major)
-
-                Instead of actually keeping this object as is, delete it after sending the packet
-                and wait for the server to send it back with a unique mpNum of its own
-            */
-            MWBase::Environment::get().getWorld()->deleteObject(dropped);
-            /*
-                End of tes3mp change (major)
-            */
-
             return dropped;
         }
 
         void removeItem (const ItemStack& item, size_t count) override { throw std::runtime_error("removeItem not implemented"); }
-        ModelIndex getIndex (ItemStack item) override { throw std::runtime_error("getIndex not implemented"); }
+        ModelIndex getIndex (const ItemStack &item) override { throw std::runtime_error("getIndex not implemented"); }
         void update() override {}
         size_t getItemCount() override { return 0; }
         ItemStack getItem (ModelIndex index) override { throw std::runtime_error("getItem not implemented"); }
+        bool usesContainer(const MWWorld::Ptr&) override { return false; }
 
     private:
         // Where to drop the item
@@ -120,7 +80,7 @@ namespace MWGui
         , mMinimap(nullptr)
         , mCrosshair(nullptr)
         , mCellNameBox(nullptr)
-        , mDrowningFrame(nullptr)
+        , mDrowningBar(nullptr)
         , mDrowningFlash(nullptr)
         , mHealthManaStaminaBaseLeft(0)
         , mWeapBoxBaseLeft(0)
@@ -158,6 +118,7 @@ namespace MWGui
         fatigueFrame->eventMouseButtonClick += MyGUI::newDelegate(this, &HUD::onHMSClicked);
 
         //Drowning bar
+        getWidget(mDrowningBar, "DrowningBar");
         getWidget(mDrowningFrame, "DrowningFrame");
         getWidget(mDrowning, "Drowning");
         getWidget(mDrowningFlash, "Flash");
@@ -263,7 +224,7 @@ namespace MWGui
 
     void HUD::setDrowningBarVisible(bool visible)
     {
-        mDrowningFrame->setVisible(visible);
+        mDrowningBar->setVisible(visible);
     }
 
     void HUD::onWorldClicked(MyGUI::Widget* _sender)
@@ -303,26 +264,7 @@ namespace MWGui
             {
                 // pick up object
                 if (!object.isEmpty())
-                /*
-                    Start of tes3mp change (major)
-
-                    Disable unilateral picking up of objects on this client
-
-                    Instead, send an ID_OBJECT_ACTIVATE packet every time an item is made to pick up
-                    an item here, and expect the server's reply to our packet to cause the actual
-                    picking up of items
-                */
-                    //winMgr->getInventoryWindow()->pickUpObject(object);
-                {
-                    mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                    objectList->reset();
-                    objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                    objectList->addObjectActivate(object, MWMechanics::getPlayer());
-                    objectList->sendObjectActivate();
-                }
-                /*
-                    End of tes3mp change (major)
-                */
+                    winMgr->getInventoryWindow()->pickUpObject(object);
             }
         }
     }
@@ -426,9 +368,6 @@ namespace MWGui
             mWeaponSpellBox->setPosition(mWeaponSpellBox->getPosition() + MyGUI::IntPoint(0,20));
         }
 
-        if (mIsDrowning)
-            mDrowningFlashTheta += dt * osg::PI*2;
-
         mSpellIcons->updateWidgets(mEffectBox, true);
 
         if (mEnemyActorId != -1 && mEnemyHealth->getVisible())
@@ -436,8 +375,13 @@ namespace MWGui
             updateEnemyHealthBar();
         }
 
+        if (mDrowningBar->getVisible())
+            mDrowningBar->setPosition(mMainWidget->getWidth()/2 - mDrowningFrame->getWidth()/2, mMainWidget->getTop());
+
         if (mIsDrowning)
         {
+            mDrowningFlashTheta += dt * osg::PI*2;
+
             float intensity = (cos(mDrowningFlashTheta) + 2.0f) / 3.0f;
 
             mDrowningFlash->setAlpha(intensity);
@@ -668,7 +612,7 @@ namespace MWGui
 
         static const float fNPCHealthBarFade = MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>().find("fNPCHealthBarFade")->mValue.getFloat();
         if (fNPCHealthBarFade > 0.f)
-            mEnemyHealth->setAlpha(std::max(0.f, std::min(1.f, mEnemyHealthTimer/fNPCHealthBarFade)));
+            mEnemyHealth->setAlpha(std::clamp(mEnemyHealthTimer / fNPCHealthBarFade, 0.f, 1.f));
 
     }
 

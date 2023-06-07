@@ -1,21 +1,8 @@
 #include "armor.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/Utils.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/Worldstate.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/esm/loadarmo.hpp>
-#include <components/esm/loadskil.hpp>
-#include <components/esm/loadgmst.hpp>
+#include <components/esm3/loadarmo.hpp>
+#include <components/esm3/loadskil.hpp>
+#include <components/esm3/loadgmst.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -45,32 +32,6 @@ namespace MWClass
         if (!model.empty()) {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
-    }
-
-    void Armor::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
-    {
-        // TODO: add option somewhere to enable collision for placeable objects
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to enable collision for this object class from a packet
-        */
-        if (!model.empty())
-        {
-            mwmp::BaseWorldstate *worldstate = mwmp::Main::get().getNetworking()->getWorldstate();
-
-            if (worldstate->hasPlacedObjectCollision || Utils::vectorContains(worldstate->enforcedCollisionRefIds, ptr.getCellRef().getRefId()))
-            {
-                if (worldstate->useActorCollisionForPlacedObjects)
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_Actor);
-                else
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_World);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
     }
 
     std::string Armor::getModel(const MWWorld::ConstPtr &ptr) const
@@ -202,7 +163,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Armor);
 
-        registerClass (typeid (ESM::Armor).name(), instance);
+        registerClass (ESM::Armor::sRecordId, instance);
     }
 
     std::string Armor::getUpSoundId (const MWWorld::ConstPtr& ptr) const
@@ -301,18 +262,6 @@ namespace MWClass
         newItem.mName=newName;
         newItem.mData.mEnchant=enchCharge;
         newItem.mEnchant=enchId;
-
-        /*
-            Start of tes3mp addition
-
-            Send the newly created record to the server and expect it to be
-            returned with a server-set id
-        */
-        mwmp::Main::get().getNetworking()->getWorldstate()->sendArmorRecord(&newItem, ref->mBase->mId);
-        /*
-            End of tes3mp addition
-        */
-
         const ESM::Armor *record = MWBase::Environment::get().getWorld()->createRecord (newItem);
         return record->mId;
     }
@@ -373,7 +322,7 @@ namespace MWClass
             if(*slot == MWWorld::InventoryStore::Slot_CarriedLeft)
             {
                 MWWorld::ConstContainerStoreIterator weapon = invStore.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
-                if(weapon != invStore.end() && weapon->getTypeName() == typeid(ESM::Weapon).name())
+                if(weapon != invStore.end() && weapon->getType() == ESM::Weapon::sRecordId)
                 {
                     const MWWorld::LiveCellRef<ESM::Weapon> *ref = weapon->get<ESM::Weapon>();
                     if (MWMechanics::getWeaponType(ref->mBase->mData.mType)->mFlags & ESM::WeaponType::TwoHanded)

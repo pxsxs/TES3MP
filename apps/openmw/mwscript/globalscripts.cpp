@@ -2,8 +2,8 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/stringops.hpp>
-#include <components/esm/esmwriter.hpp>
-#include <components/esm/globalscript.hpp>
+#include <components/esm3/esmwriter.hpp>
+#include <components/esm3/globalscript.hpp>
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -92,6 +92,21 @@ namespace
             return false;
         }
     };
+
+    struct IdGettingVisitor : public boost::static_visitor<std::string>
+    {
+        std::string operator()(const MWWorld::Ptr& ptr) const
+        {
+            if(ptr.isEmpty())
+                return {};
+            return ptr.mRef->mRef.getRefId();
+        }
+
+        std::string operator()(const std::pair<ESM::RefNum, std::string>& pair) const
+        {
+            return pair.second;
+        }
+    };
 }
 
 namespace MWScript
@@ -108,6 +123,11 @@ namespace MWScript
         MWWorld::Ptr ptr = boost::apply_visitor(PtrResolvingVisitor(), mTarget);
         mTarget = ptr;
         return ptr;
+    }
+
+    std::string GlobalScriptDesc::getId() const
+    {
+        return boost::apply_visitor(IdGettingVisitor(), mTarget);
     }
 
 
@@ -168,21 +188,6 @@ namespace MWScript
             if (script.second->mRunning)
             {
                 MWScript::InterpreterContext context(script.second);
-
-                /*
-                    Start of tes3mp addition
-
-                    Mark this InterpreterContext as having a SCRIPT_GLOBAL context
-                    and as currently running the script with this name, so that
-                    packets sent by the Interpreter can have their
-                    origin determined by serverside scripts
-                */
-                context.trackContextType(Interpreter::Context::SCRIPT_GLOBAL);
-                context.trackCurrentScriptName(script.first);
-                /*
-                    End of tes3mp addition
-                */
-
                 if (!MWBase::Environment::get().getScriptManager()->run(script.first, context))
                     script.second->mRunning = false;
             }

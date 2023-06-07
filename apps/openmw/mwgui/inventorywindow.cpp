@@ -18,20 +18,6 @@
 
 #include <components/settings/settings.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwworld/cellstore.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/world.hpp"
 #include "../mwbase/environment.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -41,8 +27,7 @@
 #include "../mwworld/class.hpp"
 #include "../mwworld/actionequip.hpp"
 
-#include "../mwmechanics/actorutil.hpp"
-#include "../mwmechanics/creaturestats.hpp"
+#include "../mwmechanics/npcstats.hpp"
 
 #include "itemview.hpp"
 #include "inventoryitemmodel.hpp"
@@ -51,7 +36,6 @@
 #include "countdialog.hpp"
 #include "tradewindow.hpp"
 #include "draganddrop.hpp"
-#include "widgets.hpp"
 #include "tooltips.hpp"
 
 namespace
@@ -59,7 +43,7 @@ namespace
 
     bool isRightHandWeapon(const MWWorld::Ptr& item)
     {
-        if (item.getClass().getTypeName() != typeid(ESM::Weapon).name())
+        if (item.getClass().getType() != ESM::Weapon::sRecordId)
             return false;
         std::vector<int> equipmentSlots = item.getClass().getEquipmentSlots(item).first;
         return (!equipmentSlots.empty() && equipmentSlots.front() == MWWorld::InventoryStore::Slot_CarriedRight);
@@ -83,7 +67,7 @@ namespace MWGui
         , mTrading(false)
         , mUpdateTimer(0.f)
     {
-        mPreviewTexture.reset(new osgMyGUI::OSGTexture(mPreview->getTexture()));
+        mPreviewTexture.reset(new osgMyGUI::OSGTexture(mPreview->getTexture(), mPreview->getTextureStateSet()));
         mPreview->rebuild();
 
         mMainWidget->castType<MyGUI::Window>()->eventWindowChangeCoord += MyGUI::newDelegate(this, &InventoryWindow::onWindowResize);
@@ -294,7 +278,7 @@ namespace MWGui
         // If we unequip weapon during attack, it can lead to unexpected behaviour
         if (MWBase::Environment::get().getMechanicsManager()->isAttackingOrSpell(mPtr))
         {
-            bool isWeapon = item.mBase.getTypeName() == typeid(ESM::Weapon).name();
+            bool isWeapon = item.mBase.getType() == ESM::Weapon::sRecordId;
             MWWorld::InventoryStore& invStore = mPtr.getClass().getInventoryStore(mPtr);
 
             if (isWeapon && invStore.isEquipped(item.mBase))
@@ -475,14 +459,10 @@ namespace MWGui
 
     void InventoryWindow::updatePreviewSize()
     {
-        MyGUI::IntSize size = mAvatarImage->getSize();
-        int width = std::min(mPreview->getTextureWidth(), size.width);
-        int height = std::min(mPreview->getTextureHeight(), size.height);
-        float scalingFactor = MWBase::Environment::get().getWindowManager()->getScalingFactor();
-        mPreview->setViewport(int(width*scalingFactor), int(height*scalingFactor));
-
+        const MyGUI::IntSize viewport = getPreviewViewportSize();
+        mPreview->setViewport(viewport.width, viewport.height);
         mAvatarImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f,
-                                                                     width*scalingFactor/float(mPreview->getTextureWidth()), height*scalingFactor/float(mPreview->getTextureHeight())));
+                                                                     viewport.width / float(mPreview->getTextureWidth()), viewport.height / float(mPreview->getTextureHeight())));
     }
 
     void InventoryWindow::onNameFilterChanged(MyGUI::EditBox* _sender)
@@ -572,9 +552,9 @@ namespace MWGui
         if (!script.empty())
         {
             // Ingredients, books and repair hammers must not have OnPCEquip set to 1 here
-            const std::string& type = ptr.getTypeName();
-            bool isBook = type == typeid(ESM::Book).name();
-            if (!isBook && type != typeid(ESM::Ingredient).name() && type != typeid(ESM::Repair).name())
+            auto type = ptr.getType();
+            bool isBook = type == ESM::Book::sRecordId;
+            if (!isBook && type != ESM::Ingredient::sRecordId && type != ESM::Repair::sRecordId)
                 ptr.getRefData().getLocals().setVarByInt(script, "onpcequip", 1);
             // Books must have PCSkipEquip set to 1 instead
             else if (isBook)
@@ -607,21 +587,11 @@ namespace MWGui
                 ptr = mDragAndDrop->mSourceModel->moveItem(mDragAndDrop->mItem, mDragAndDrop->mDraggedCount, mTradeModel);
             }
 
-            /*
-                Start of tes3mp change (major)
-
-                Instead of unilaterally using an item, send an ID_PLAYER_ITEM_USE packet and let the server
-                decide if the item actually gets used
-            */
-            //useItem(ptr);
-            mwmp::Main::get().getLocalPlayer()->sendItemUse(ptr);
-            /*
-                End of tes3mp change (major)
-            */
+            useItem(ptr);
 
             // If item is ingredient or potion don't stop drag and drop to simplify action of taking more than one 1 item
-            if ((ptr.getTypeName() == typeid(ESM::Potion).name() ||
-                 ptr.getTypeName() == typeid(ESM::Ingredient).name())
+            if ((ptr.getType() == ESM::Potion::sRecordId ||
+                 ptr.getType() == ESM::Ingredient::sRecordId)
                 && mDragAndDrop->mDraggedCount > 1)
             {
                 // Item can be provided from other window for example container.
@@ -653,15 +623,8 @@ namespace MWGui
 
     MWWorld::Ptr InventoryWindow::getAvatarSelectedItem(int x, int y)
     {
-        // convert to OpenGL lower-left origin
-        y = (mAvatarImage->getHeight()-1) - y;
-
-        // Scale coordinates
-        float scalingFactor = MWBase::Environment::get().getWindowManager()->getScalingFactor();
-        x = static_cast<int>(x*scalingFactor);
-        y = static_cast<int>(y*scalingFactor);
-
-        int slot = mPreview->getSlotSelected (x, y);
+        const osg::Vec2f viewport_coords = mapPreviewWindowToViewport(x, y);
+        int slot = mPreview->getSlotSelected(viewport_coords.x(), viewport_coords.y());
 
         if (slot == -1)
             return MWWorld::Ptr();
@@ -738,19 +701,19 @@ namespace MWGui
         if (!MWBase::Environment::get().getWindowManager()->isAllowed(GW_Inventory))
             return;
         // make sure the object is of a type that can be picked up
-        std::string type = object.getTypeName();
-        if ( (type != typeid(ESM::Apparatus).name())
-            && (type != typeid(ESM::Armor).name())
-            && (type != typeid(ESM::Book).name())
-            && (type != typeid(ESM::Clothing).name())
-            && (type != typeid(ESM::Ingredient).name())
-            && (type != typeid(ESM::Light).name())
-            && (type != typeid(ESM::Miscellaneous).name())
-            && (type != typeid(ESM::Lockpick).name())
-            && (type != typeid(ESM::Probe).name())
-            && (type != typeid(ESM::Repair).name())
-            && (type != typeid(ESM::Weapon).name())
-            && (type != typeid(ESM::Potion).name()))
+        auto type = object.getType();
+        if ( (type != ESM::Apparatus::sRecordId)
+            && (type != ESM::Armor::sRecordId)
+            && (type != ESM::Book::sRecordId)
+            && (type != ESM::Clothing::sRecordId)
+            && (type != ESM::Ingredient::sRecordId)
+            && (type != ESM::Light::sRecordId)
+            && (type != ESM::Miscellaneous::sRecordId)
+            && (type != ESM::Lockpick::sRecordId)
+            && (type != ESM::Probe::sRecordId)
+            && (type != ESM::Repair::sRecordId)
+            && (type != ESM::Weapon::sRecordId)
+            && (type != ESM::Potion::sRecordId))
             return;
 
         // An object that can be picked up must have a tooltip.
@@ -767,26 +730,17 @@ namespace MWGui
         if (!object.getRefData().activate())
             return;
 
+        // Player must not be paralyzed, knocked down, or dead to pick up an item.
+        const MWMechanics::NpcStats& playerStats = player.getClass().getNpcStats(player);
+        bool godmode = MWBase::Environment::get().getWorld()->getGodModeState();
+        if ((!godmode && playerStats.isParalyzed()) || playerStats.getKnockedDown() || playerStats.isDead())
+            return;
+
         MWBase::Environment::get().getMechanicsManager()->itemTaken(player, object, MWWorld::Ptr(), count);
 
         // add to player inventory
         // can't use ActionTake here because we need an MWWorld::Ptr to the newly inserted object
         MWWorld::Ptr newObject = *player.getClass().getContainerStore (player).add (object, object.getRefData().getCount(), player);
-
-        /*
-            Start of tes3mp addition
-
-            Send an ID_OBJECT_DELETE packet every time an item from the world is picked up
-            by the player through the inventory HUD
-        */
-        mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectGeneric(object);
-        objectList->sendObjectDelete();
-        /*
-            End of tes3mp addition
-        */
 
         // remove from world
         MWBase::Environment::get().getWorld()->deleteObject (object);
@@ -852,7 +806,7 @@ namespace MWGui
 
             lastId = item.getCellRef().getRefId();
 
-            if (item.getClass().getTypeName() == typeid(ESM::Weapon).name() &&
+            if (item.getClass().getType() == ESM::Weapon::sRecordId &&
                 isRightHandWeapon(item) &&
                 item.getClass().canBeEquipped(item, player).first)
             {
@@ -864,21 +818,33 @@ namespace MWGui
         if (!found || selected == cycled)
             return;
 
-        /*
-            Start of tes3mp change (major)
-
-            Instead of unilaterally using an item, send an ID_PLAYER_ITEM_USE packet and let the server
-            decide if the item actually gets used
-        */
-        //useItem(model.getItem(cycled).mBase);
-        mwmp::Main::get().getLocalPlayer()->sendItemUse(model.getItem(cycled).mBase);
-        /*
-            End of tes3mp change (major)
-        */
+        useItem(model.getItem(cycled).mBase);
     }
 
     void InventoryWindow::rebuildAvatar()
     {
         mPreview->rebuild();
+    }
+
+    MyGUI::IntSize InventoryWindow::getPreviewViewportSize() const
+    {
+        const MyGUI::IntSize previewWindowSize = mAvatarImage->getSize();
+        const float scale = MWBase::Environment::get().getWindowManager()->getScalingFactor();
+
+        return MyGUI::IntSize(std::min<int>(mPreview->getTextureWidth(), previewWindowSize.width * scale),
+                              std::min<int>(mPreview->getTextureHeight(), previewWindowSize.height * scale));
+    }
+
+    osg::Vec2f InventoryWindow::mapPreviewWindowToViewport(int x, int y) const
+    {
+        const MyGUI::IntSize previewWindowSize = mAvatarImage->getSize();
+        const float normalisedX = x / std::max<float>(1.0f, previewWindowSize.width);
+        const float normalisedY = y / std::max<float>(1.0f, previewWindowSize.height);
+
+        const MyGUI::IntSize viewport = getPreviewViewportSize();
+        return osg::Vec2f(
+            normalisedX * float(viewport.width - 1),
+            (1.0 - normalisedY) * float(viewport.height - 1)
+        );
     }
 }

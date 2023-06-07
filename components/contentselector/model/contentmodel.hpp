@@ -23,7 +23,7 @@ namespace ContentSelectorModel
     {
         Q_OBJECT
     public:
-        explicit ContentModel(QObject *parent, QIcon warningIcon);
+        explicit ContentModel(QObject *parent, QIcon warningIcon, bool showOMWScripts);
         ~ContentModel();
 
         void setEncoding(const QString &encoding);
@@ -44,6 +44,7 @@ namespace ContentSelectorModel
         bool dropMimeData(const QMimeData *data, Qt::DropAction action, int row, int column, const QModelIndex &parent) override;
 
         void addFiles(const QString &path);
+        void sortFiles();
         void clearFiles();
 
         QModelIndex indexFromItem(const EsmFile *item) const;
@@ -52,7 +53,7 @@ namespace ContentSelectorModel
         EsmFile *item(int row);
         QStringList gameFiles() const;
 
-        bool isEnabled (QModelIndex index) const;
+        bool isEnabled (const QModelIndex& index) const;
         bool isChecked(const QString &filepath) const;
         bool setCheckState(const QString &filepath, bool isChecked);
         void setContentList(const QStringList &fileList);
@@ -68,8 +69,6 @@ namespace ContentSelectorModel
 
         void addFile(EsmFile *file);
 
-        void sortFiles();
-
         /// Checks a specific plug-in for load order errors
         /// \return all errors found for specific plug-in
         QList<LoadOrderError> checkForLoadOrderErrors(const EsmFile *file, int row) const;
@@ -84,6 +83,7 @@ namespace ContentSelectorModel
         QSet<QString> mPluginsWithLoadOrderError;
         QString mEncoding;
         QIcon mWarningIcon;
+        bool mShowOMWScripts;
 
     public:
 

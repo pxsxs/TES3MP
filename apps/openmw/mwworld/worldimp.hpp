@@ -15,6 +15,7 @@
 #include "timestamp.hpp"
 #include "globals.hpp"
 #include "contentloader.hpp"
+#include "groundcoverstore.hpp"
 
 namespace osg
 {
@@ -80,6 +81,7 @@ namespace MWWorld
 
             std::vector<ESM::ESMReader> mEsm;
             MWWorld::ESMStore mStore;
+            GroundcoverStore mGroundcoverStore;
             LocalScripts mLocalScripts;
             MWWorld::Globals mGlobalVariables;
 
@@ -133,8 +135,6 @@ namespace MWWorld
 
             void updateWeather(float duration, bool paused = false);
 
-            void rotateObjectImp (const Ptr& ptr, const osg::Vec3f& rot, MWBase::RotationFlags flags);
-
             Ptr copyObjectToCell(const ConstPtr &ptr, CellStore* cell, ESM::Position pos, int count, bool adjustPos);
 
             void updateSoundListener();
@@ -144,19 +144,8 @@ namespace MWWorld
 
             MWWorld::Ptr getFacedObject(float maxDistance, bool ignorePlayer=true);
 
-            /*
-                Start of tes3mp change (major)
+            void PCDropped (const Ptr& item);
 
-                This has been turned into a public method so it can be used in
-                multiplayer's different approach to placing items
-            */
-    public:
-            void PCDropped(const Ptr& item);
-            /*
-                End of tes3mp change (major)
-            */
-
-    private:
             bool rotateDoor(const Ptr door, DoorState state, float duration);
 
             void processDoors(float duration);
@@ -170,19 +159,15 @@ namespace MWWorld
             void updateNavigatorObject(const MWPhysics::Object& object);
 
             void ensureNeededRecords();
+            void validateMasterFiles(const std::vector<ESM::ESMReader>& readers);
 
             void fillGlobalVariables();
 
             void updateSkyDate();
 
-            /**
-             * @brief loadContentFiles - Loads content files (esm,esp,omwgame,omwaddon)
-             * @param fileCollections- Container which holds content file names and their paths
-             * @param content - Container which holds content file names
-             * @param contentLoader -
-             */
-            void loadContentFiles(const Files::Collections& fileCollections,
-                const std::vector<std::string>& content, const std::vector<std::string>& groundcover, ContentLoader& contentLoader);
+            void loadContentFiles(const Files::Collections& fileCollections, const std::vector<std::string>& content, ESMStore& store, std::vector<ESM::ESMReader>& readers, ToUTF8::Utf8Encoder* encoder, Loading::Listener* listener);
+
+            void loadGroundcoverFiles(const Files::Collections& fileCollections, const std::vector<std::string>& groundcoverFiles, ToUTF8::Utf8Encoder* encoder);
 
             float feetToGameUnits(float feet);
             float getActivationDistancePlusTelekinesis();
@@ -227,6 +212,8 @@ namespace MWWorld
 
             CellStore *getCell (const ESM::CellId& id) override;
 
+            bool isCellActive(CellStore* cell) const override;
+
             void testExteriorCells() override;
             void testInteriorCells() override;
 
@@ -235,7 +222,7 @@ namespace MWWorld
 
             void setWaterHeight(const float height) override;
 
-            void rotateWorldObject (const MWWorld::Ptr& ptr, osg::Quat rotate) override;
+            void rotateWorldObject (const MWWorld::Ptr& ptr, const osg::Quat& rotate) override;
 
             bool toggleWater() override;
             bool toggleWorld() override;
@@ -248,16 +235,6 @@ namespace MWWorld
             MWWorld::ConstPtr getPlayerConstPtr() const override;
 
             const MWWorld::ESMStore& getStore() const override;
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to get the World's ESMStore as a non-const
-            */
-            MWWorld::ESMStore& getModifiableStore() override;
-            /*
-                End of tes3mp addition
-            */
 
             std::vector<ESM::ESMReader>& getEsmReader() override;
 
@@ -275,19 +252,6 @@ namespace MWWorld
 
             void getDoorMarkers (MWWorld::CellStore* cell, std::vector<DoorMarker>& out) override;
             ///< get a list of teleport door markers for a given cell, to be displayed on the local map
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether global variables exist and to create
-                new ones
-            */
-            bool hasGlobal(const std::string& name);
-
-            void createGlobal(const std::string& name, ESM::VarType varType);
-            /*
-                End of tes3mp addition
-            */
 
             void setGlobalInt (const std::string& name, int value) override;
             ///< Set value independently from real type.
@@ -327,26 +291,6 @@ namespace MWWorld
 
             Ptr searchPtrViaRefNum (const std::string& id, const ESM::RefNum& refNum) override;
 
-            /*
-                Start of tes3mp addition
-
-                Make it possible to find a Ptr in any active cell based on its refNum and mpNum
-            */
-            Ptr searchPtrViaUniqueIndex(int refNum, int mpNum) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to update all Ptrs in active cells that have a certain refId
-            */
-            void updatePtrsWithRefId(std::string refId) override;
-            /*
-                End of tes3mp addition
-            */
-
             MWWorld::Ptr findContainer (const MWWorld::ConstPtr& ptr) override;
             ///< Return a pointer to a liveCellRef which contains \a ptr.
             /// \note Search is limited to the active cells.
@@ -378,51 +322,6 @@ namespace MWWorld
             ///< \return Resulting mode
 
             void changeWeather (const std::string& region, const unsigned int id) override;
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set a specific weather state for a region from elsewhere
-                in the code
-            */
-            void setRegionWeather(const std::string& region, const unsigned int currentWeather, const unsigned int nextWeather,
-                const unsigned int queuedWeather, const float transitionFactor, bool force) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether the local WeatherManager has the
-                ability to create weather changes
-            */
-            bool getWeatherCreationState() override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to enable and disable the local WeatherManager's ability
-                to create weather changes
-            */
-            void setWeatherCreationState(bool state) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to send the current weather in a WorldWeather packet
-                when requested from elsewhere in the code
-            */
-            void sendWeather() override;
-            /*
-                End of tes3mp addition
-            */
 
             int getCurrentWeather() const override;
 
@@ -469,13 +368,13 @@ namespace MWWorld
 
             void undeleteObject (const Ptr& ptr) override;
 
-            MWWorld::Ptr moveObject (const Ptr& ptr, float x, float y, float z, bool movePhysics=true, bool moveToActive=false) override;
+            MWWorld::Ptr moveObject (const Ptr& ptr, const osg::Vec3f& position, bool movePhysics=true, bool moveToActive=false) override;
             ///< @return an updated Ptr in case the Ptr's cell changes
 
-            MWWorld::Ptr moveObject (const Ptr& ptr, CellStore* newCell, float x, float y, float z, bool movePhysics=true) override;
+            MWWorld::Ptr moveObject (const Ptr& ptr, CellStore* newCell, const osg::Vec3f& position, bool movePhysics=true, bool keepActive=false) override;
             ///< @return an updated Ptr
 
-            MWWorld::Ptr moveObjectBy(const Ptr& ptr, osg::Vec3f vec, bool moveToActive, bool ignoreCollisions) override;
+            MWWorld::Ptr moveObjectBy(const Ptr& ptr, const osg::Vec3f& vec) override;
             ///< @return an updated Ptr
 
             void scaleObject (const Ptr& ptr, float scale) override;
@@ -484,10 +383,9 @@ namespace MWWorld
             /// @note Rotations via this method use a different rotation order than the initial rotations in the CS. This
             /// could be considered a bug, but is needed for MW compatibility.
             /// \param adjust indicates rotation should be set or adjusted
-            void rotateObject (const Ptr& ptr, float x, float y, float z,
-                MWBase::RotationFlags flags = MWBase::RotationFlag_inverseOrder) override;
+            void rotateObject (const Ptr& ptr, const osg::Vec3f& rot, MWBase::RotationFlags flags = MWBase::RotationFlag_inverseOrder) override;
 
-            MWWorld::Ptr placeObject(const MWWorld::ConstPtr& ptr, MWWorld::CellStore* cell, ESM::Position pos) override;
+            MWWorld::Ptr placeObject(const MWWorld::ConstPtr& ptr, MWWorld::CellStore* cell, const ESM::Position& pos) override;
             ///< Place an object. Makes a copy of the Ptr.
 
             MWWorld::Ptr safePlaceObject (const MWWorld::ConstPtr& ptr, const MWWorld::ConstPtr& referenceObject, MWWorld::CellStore* referenceCell, int direction, float distance) override;
@@ -506,37 +404,6 @@ namespace MWWorld
             void queueMovement(const Ptr &ptr, const osg::Vec3f &velocity) override;
             ///< Queues movement for \a ptr (in local space), to be applied in the next call to
             /// doPhysics.
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the inertial force of a Ptr directly
-            */
-            void setInertialForce(const Ptr& ptr, const osg::Vec3f &force);
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set whether a Ptr is on the ground or not, needed for proper
-                synchronization in multiplayer
-            */
-            void setOnGround(const Ptr& ptr, bool onGround);
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the physics framerate from elsewhere
-            */
-            void setPhysicsFramerate(float physFramerate);
-            /*
-                End of tes3mp addition
-            */
 
             void updateAnimatedCollisionShape(const Ptr &ptr) override;
 
@@ -579,10 +446,6 @@ namespace MWWorld
 
             const ESM::NPC *createRecord(const ESM::NPC &record) override;
             ///< Create a new record (of type npc) in the ESM store.
-            /// \return pointer to created record
-
-            const ESM::Creature *createRecord(const ESM::Creature &record) override;
-            ///< Create a new record (of type creature) in the ESM store.
             /// \return pointer to created record
 
             const ESM::Armor *createRecord (const ESM::Armor& record) override;
@@ -666,13 +529,10 @@ namespace MWWorld
             bool isFirstPerson() const override;
             bool isPreviewModeEnabled() const override;
 
-            void togglePreviewMode(bool enable) override;
-
             bool toggleVanityMode(bool enable) override;
 
-            void allowVanityMode(bool allow) override;
+            MWRender::Camera* getCamera() override;
             bool vanityRotateCamera(float * rot) override;
-            void adjustCameraDistance(float dist) override;
 
             void applyDeferredPreviewRotationToPlayer(float dt) override;
             void disableDeferredPreviewRotation() override;
@@ -689,56 +549,6 @@ namespace MWWorld
             /// @param state see MWClass::setDoorState
             /// @note throws an exception when invoked on a teleport door
             void activateDoor(const MWWorld::Ptr& door, MWWorld::DoorState state) override;
-
-            /*
-                Start of tes3mp addition
-
-                Useful self-contained method for saving door states
-            */
-            void saveDoorState(const MWWorld::Ptr& door, MWWorld::DoorState state) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether a cell is active
-            */
-            bool isCellActive(const ESM::Cell& cell) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to unload a cell from elsewhere
-            */
-            void unloadCell(const ESM::Cell& cell) override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to unload all active cells from elsewhere
-            */
-            void unloadActiveCells() override;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Clear the CellStore for a specific Cell from elsewhere
-            */
-            virtual void clearCellStore(const ESM::Cell& cell) override;
-            /*
-                End of tes3mp addition
-            */
 
             void getActorsStandingOn (const MWWorld::ConstPtr& object, std::vector<MWWorld::Ptr> &actors) override; ///< get a list of actors standing on \a object
             bool getPlayerStandingOn (const MWWorld::ConstPtr& object) override; ///< @return true if the player is standing on \a object
@@ -821,7 +631,7 @@ namespace MWWorld
              */
             void castSpell (const MWWorld::Ptr& actor, bool manualSpell=false) override;
 
-            void launchMagicBolt (const std::string& spellId, const MWWorld::Ptr& caster, const osg::Vec3f& fallbackDirection) override;
+            void launchMagicBolt (const std::string& spellId, const MWWorld::Ptr& caster, const osg::Vec3f& fallbackDirection, int slot) override;
             void launchProjectile (MWWorld::Ptr& actor, MWWorld::Ptr& projectile,
                                            const osg::Vec3f& worldPos, const osg::Quat& orient, MWWorld::Ptr& bow, float speed, float attackStrength) override;
             void updateProjectilesCasters() override;
@@ -866,7 +676,7 @@ namespace MWWorld
 
             void explodeSpell(const osg::Vec3f& origin, const ESM::EffectList& effects, const MWWorld::Ptr& caster, const MWWorld::Ptr& ignore,
                                       ESM::RangeType rangeType, const std::string& id, const std::string& sourceName,
-                                      const bool fromProjectile=false) override;
+                                      const bool fromProjectile=false, int slot = 0) override;
 
             void activate (const MWWorld::Ptr& object, const MWWorld::Ptr& actor) override;
 
@@ -920,7 +730,8 @@ namespace MWWorld
 
             bool hasCollisionWithDoor(const MWWorld::ConstPtr& door, const osg::Vec3f& position, const osg::Vec3f& destination) const override;
 
-            bool isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius, const MWWorld::ConstPtr& ignore) const override;
+            bool isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius,
+                const MWWorld::ConstPtr& ignore, std::vector<MWWorld::Ptr>* occupyingActors) const override;
 
             void reportStats(unsigned int frameNumber, osg::Stats& stats) const override;
 

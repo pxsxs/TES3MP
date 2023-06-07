@@ -2,7 +2,6 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/files/configfileparser.hpp>
-#include <components/files/escape.hpp>
 #include <components/fallback/validate.hpp>
 
 #include <boost/filesystem/fstream.hpp>
@@ -55,7 +54,7 @@ void ConfigurationManager::readConfiguration(boost::program_options::variables_m
     using ParsedConfigFile = bpo::basic_parsed_options<char>;
     bool silent = mSilent;
     mSilent = quiet;
-    
+
     std::optional<ParsedConfigFile> config = loadConfig(mFixedPath.getLocalPath(), description);
     if (config)
         mActiveConfigPaths.push_back(mFixedPath.getLocalPath());
@@ -175,7 +174,8 @@ void ConfigurationManager::addCommonOptions(boost::program_options::options_desc
             "set user data directory (used for saves, screenshots, etc)");
 }
 
-boost::program_options::variables_map ConfigurationManager::separateComposingVariables(boost::program_options::variables_map & variables, boost::program_options::options_description& description)
+boost::program_options::variables_map separateComposingVariables(boost::program_options::variables_map & variables,
+    boost::program_options::options_description& description)
 {
     boost::program_options::variables_map composingVariables;
     for (auto itr = variables.begin(); itr != variables.end();)
@@ -191,7 +191,8 @@ boost::program_options::variables_map ConfigurationManager::separateComposingVar
     return composingVariables;
 }
 
-void ConfigurationManager::mergeComposingVariables(boost::program_options::variables_map & first, boost::program_options::variables_map & second, boost::program_options::options_description& description)
+void mergeComposingVariables(boost::program_options::variables_map& first, boost::program_options::variables_map& second,
+    boost::program_options::options_description& description)
 {
     // There are a few places this assumes all variables are present in second, but it's never crashed in the wild, so it looks like that's guaranteed.
     std::set<std::string> replacedVariables;
@@ -200,7 +201,7 @@ void ConfigurationManager::mergeComposingVariables(boost::program_options::varia
         auto replace = second["replace"];
         if (!replace.defaulted() && !replace.empty())
         {
-            std::vector<std::string> replaceVector = replace.as<Files::EscapeStringVector>().toStdStringVector();
+            std::vector<std::string> replaceVector = replace.as<std::vector<std::string>>();
             replacedVariables.insert(replaceVector.begin(), replaceVector.end());
         }
     }
@@ -229,18 +230,18 @@ void ConfigurationManager::mergeComposingVariables(boost::program_options::varia
             boost::any& firstValue = firstPosition->second.value();
             const boost::any& secondValue = second[name].value();
             
-            if (firstValue.type() == typeid(Files::EscapePathContainer))
+            if (firstValue.type() == typeid(Files::MaybeQuotedPathContainer))
             {
-                auto& firstPathContainer = boost::any_cast<Files::EscapePathContainer&>(firstValue);
-                const auto& secondPathContainer = boost::any_cast<const Files::EscapePathContainer&>(secondValue);
+                auto& firstPathContainer = boost::any_cast<Files::MaybeQuotedPathContainer&>(firstValue);
+                const auto& secondPathContainer = boost::any_cast<const Files::MaybeQuotedPathContainer&>(secondValue);
                 firstPathContainer.insert(firstPathContainer.end(), secondPathContainer.begin(), secondPathContainer.end());
             }
-            else if (firstValue.type() == typeid(Files::EscapeStringVector))
+            else if (firstValue.type() == typeid(std::vector<std::string>))
             {
-                auto& firstVector = boost::any_cast<Files::EscapeStringVector&>(firstValue);
-                const auto& secondVector = boost::any_cast<const Files::EscapeStringVector&>(secondValue);
+                auto& firstVector = boost::any_cast<std::vector<std::string>&>(firstValue);
+                const auto& secondVector = boost::any_cast<const std::vector<std::string>&>(secondValue);
 
-                firstVector.mVector.insert(firstVector.mVector.end(), secondVector.mVector.begin(), secondVector.mVector.end());
+                firstVector.insert(firstVector.end(), secondVector.begin(), secondVector.end());
             }
             else if (firstValue.type() == typeid(Fallback::FallbackMap))
             {
@@ -261,6 +262,7 @@ void ConfigurationManager::mergeComposingVariables(boost::program_options::varia
 void ConfigurationManager::processPath(boost::filesystem::path& path, bool create) const
 {
     std::string str = path.string();
+
     // Do nothing if the path doesn't start with a token
     if (str.empty() || str[0] != '?')
         return;
@@ -286,7 +288,6 @@ void ConfigurationManager::processPath(boost::filesystem::path& path, bool creat
             if (!mSilent)
                 Log(Debug::Warning) << "Path starts with unknown token: " << path;
             path.clear();
-
         }
     }
 
@@ -328,11 +329,9 @@ std::optional<bpo::basic_parsed_options<char>> ConfigurationManager::loadConfig(
         if (!mSilent)
             Log(Debug::Info) << "Loading config file: " << cfgFile.string();
 
-        boost::filesystem::ifstream configFileStreamUnfiltered(cfgFile);
-        boost::iostreams::filtering_istream configFileStream;
-        configFileStream.push(escape_hash_filter());
-        configFileStream.push(configFileStreamUnfiltered);
-        if (configFileStreamUnfiltered.is_open())
+        boost::filesystem::ifstream configFileStream(cfgFile);
+
+        if (configFileStream.is_open())
             return Files::parse_config_file(configFileStream, description, true);
         else if (!mSilent)
             Log(Debug::Error) << "Loading failed.";
@@ -386,6 +385,51 @@ const boost::filesystem::path& ConfigurationManager::getLogPath() const
 const boost::filesystem::path& ConfigurationManager::getScreenshotPath() const
 {
     return mScreenshotPath;
+}
+
+void parseArgs(int argc, const char* const argv[], boost::program_options::variables_map& variables,
+    boost::program_options::options_description& description)
+{
+    boost::program_options::store(
+        boost::program_options::command_line_parser(argc, argv).options(description).allow_unregistered().run(),
+        variables
+    );
+}
+
+void parseConfig(std::istream& stream, boost::program_options::variables_map& variables,
+    boost::program_options::options_description& description)
+{
+    boost::program_options::store(
+        Files::parse_config_file(stream, description, true),
+        variables
+    );
+}
+
+std::istream& operator>> (std::istream& istream, MaybeQuotedPath& MaybeQuotedPath)
+{
+    // If the stream starts with a double quote, read from stream using boost::filesystem::path rules, then discard anything remaining.
+    // This prevents boost::program_options getting upset that we've not consumed the whole stream.
+    // If it doesn't start with a double quote, read the whole thing verbatim
+    if (istream.peek() == '"')
+    {
+        istream >> static_cast<boost::filesystem::path&>(MaybeQuotedPath);
+        if (istream && !istream.eof() && istream.peek() != EOF)
+        {
+            std::string remainder{std::istreambuf_iterator(istream), {}};
+            Log(Debug::Warning) << "Trailing data in path setting. Used '" << MaybeQuotedPath.string() << "' but '" << remainder << "' remained";
+        }
+    }
+    else
+    {
+        std::string intermediate{std::istreambuf_iterator(istream), {}};
+        static_cast<boost::filesystem::path&>(MaybeQuotedPath) = intermediate;
+    }
+    return istream;
+}
+
+PathContainer asPathContainer(const MaybeQuotedPathContainer& MaybeQuotedPathContainer)
+{
+    return PathContainer(MaybeQuotedPathContainer.begin(), MaybeQuotedPathContainer.end());
 }
 
 } /* namespace Files */

@@ -1,6 +1,7 @@
 #ifndef GAME_MWMECHANICS_CREATURESTATS_H
 #define GAME_MWMECHANICS_CREATURESTATS_H
 
+#include <map>
 #include <set>
 #include <string>
 #include <stdexcept>
@@ -13,7 +14,7 @@
 #include "drawstate.hpp"
 
 #include <components/esm/attr.hpp>
-#include <components/esm/magiceffects.hpp>
+#include <components/esm3/magiceffects.hpp>
 
 namespace ESM
 {
@@ -64,8 +65,6 @@ namespace MWMechanics
         std::string mLastHitObject; // The last object to hit this actor
         std::string mLastHitAttemptObject; // The last object to attempt to hit this actor
 
-        bool mRecalcMagicka;
-
         // For merchants: the last time items were restocked and gold pool refilled.
         MWWorld::TimeStamp mLastRestock;
 
@@ -85,16 +84,15 @@ namespace MWMechanics
         float mSideMovementAngle;
 
     private:
-        std::map<ESM::SummonKey, int> mSummonedCreatures; // <SummonKey, ActorId>
+        std::multimap<int, int> mSummonedCreatures; // <Effect, ActorId>
 
         // Contains ActorIds of summoned creatures with an expired lifetime that have not been deleted yet.
         // This may be necessary when the creature is in an inactive cell.
         std::vector<int> mSummonGraveyard;
 
-        std::map<std::string, CorprusStats> mCorprusSpells;
-
     protected:
         int mLevel;
+        bool mAttackingOrSpell;
 
     public:
         CreatureStats();
@@ -102,8 +100,7 @@ namespace MWMechanics
         DrawState_ getDrawState() const;
         void setDrawState(DrawState_ state);
 
-        bool needToRecalcDynamicStats();
-        void setNeedRecalcDynamicStats(bool val);
+        void recalculateMagicka();
 
         float getFallHeight() const;
         void addToFallHeight(float height);
@@ -128,7 +125,7 @@ namespace MWMechanics
 
         const MagicEffects & getMagicEffects() const;
 
-        bool getAttackingOrSpell() const;
+        bool getAttackingOrSpell() const { return mAttackingOrSpell; }
 
         int getLevel() const;
 
@@ -153,7 +150,7 @@ namespace MWMechanics
         /// Set Modifier for each magic effect according to \a effects. Does not touch Base values.
         void modifyMagicEffects(const MagicEffects &effects);
 
-        void setAttackingOrSpell(bool attackingOrSpell);
+        void setAttackingOrSpell(bool attackingOrSpell) { mAttackingOrSpell = attackingOrSpell; }
 
         void setLevel(int level);
 
@@ -203,16 +200,6 @@ namespace MWMechanics
         int getFriendlyHits() const;
         ///< Number of friendly hits received.
 
-        /*
-            Start of tes3mp addition
-
-            Make it possible to set the number of friendly hits from elsewhere
-        */
-        void setFriendlyHits(int hits);
-        /*
-            End of tes3mp addition
-        */
-
         void friendlyHit();
         ///< Increase number of friendly hits by one.
 
@@ -244,19 +231,8 @@ namespace MWMechanics
         void setBlock(bool value);
         bool getBlock() const;
 
-        std::map<ESM::SummonKey, int>& getSummonedCreatureMap(); // <SummonKey, ActorId of summoned creature>
+        std::multimap<int, int>& getSummonedCreatureMap(); // <Effect, ActorId of summoned creature>
         std::vector<int>& getSummonedCreatureGraveyard(); // ActorIds
-
-         /*
-            Start of tes3mp addition
-
-            Make it possible to set a new actorId for summoned creatures, necessary for properly
-            initializing them after syncing them across players
-         */
-        void setSummonedCreatureActorId(std::string refId, int actorId);
-        /*
-            End of tes3mp addition
-        */
 
         enum Flag
         {
@@ -315,12 +291,6 @@ namespace MWMechanics
         /// assigned this function will return false).
 
         static void cleanup();
-
-        std::map<std::string, CorprusStats> & getCorprusSpells();
-
-        void addCorprusSpell(const std::string& sourceId, CorprusStats& stats);
-
-        void removeCorprusSpell(const std::string& sourceId);
 
         float getSideMovementAngle() const { return mSideMovementAngle; }
         void setSideMovementAngle(float angle) { mSideMovementAngle = angle; }

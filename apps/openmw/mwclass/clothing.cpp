@@ -1,18 +1,6 @@
 #include "clothing.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/Utils.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/esm/loadclot.hpp>
+#include <components/esm3/loadclot.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -39,32 +27,6 @@ namespace MWClass
         if (!model.empty()) {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
-    }
-
-    void Clothing::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
-    {
-        // TODO: add option somewhere to enable collision for placeable objects
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to enable collision for this object class from a packet
-        */
-        if (!model.empty())
-        {
-            mwmp::BaseWorldstate *worldstate = mwmp::Main::get().getNetworking()->getWorldstate();
-
-            if (worldstate->hasPlacedObjectCollision || Utils::vectorContains(worldstate->enforcedCollisionRefIds, ptr.getCellRef().getRefId()))
-            {
-                if (worldstate->useActorCollisionForPlacedObjects)
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_Actor);
-                else
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_World);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
     }
 
     std::string Clothing::getModel(const MWWorld::ConstPtr &ptr) const
@@ -159,7 +121,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Clothing);
 
-        registerClass (typeid (ESM::Clothing).name(), instance);
+        registerClass (ESM::Clothing::sRecordId, instance);
     }
 
     std::string Clothing::getUpSoundId (const MWWorld::ConstPtr& ptr) const
@@ -234,18 +196,6 @@ namespace MWClass
         newItem.mName=newName;
         newItem.mData.mEnchant=enchCharge;
         newItem.mEnchant=enchId;
-
-        /*
-            Start of tes3mp addition
-
-            Send the newly created record to the server and expect it to be
-            returned with a server-set id
-        */
-        mwmp::Main::get().getNetworking()->getWorldstate()->sendClothingRecord(&newItem, ref->mBase->mId);
-        /*
-            End of tes3mp addition
-        */
-
         const ESM::Clothing *record = MWBase::Environment::get().getWorld()->createRecord (newItem);
         return record->mId;
     }

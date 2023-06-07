@@ -5,9 +5,9 @@
 #include <string>
 #include <map>
 
-#include <stdint.h>
+#include <cstdint>
 
-#include <components/esm/loadglob.hpp>
+#include <components/esm3/loadglob.hpp>
 
 namespace ESM
 {
@@ -56,26 +56,6 @@ namespace MWWorld
             ///< Records for variables that do not exist are dropped silently.
             ///
             /// \return Known type?
-        
-            /*
-                Start of tes3mp addition
-
-                Make it possible to add a global record from elsewhere
-            */
-            void addRecord(const ESM::Global global);
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether a global exists
-            */
-            bool hasRecord(const std::string& name);
-            /*
-                End of tes3mp addition
-            */
 
     };
 }

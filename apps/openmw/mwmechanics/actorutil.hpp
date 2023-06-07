@@ -3,9 +3,9 @@
 
 #include <algorithm>
 
-#include <components/esm/loadcont.hpp>
-#include <components/esm/loadcrea.hpp>
-#include <components/esm/loadnpc.hpp>
+#include <components/esm3/loadcont.hpp>
+#include <components/esm3/loadcrea.hpp>
+#include <components/esm3/loadnpc.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -86,6 +86,14 @@ namespace MWMechanics
     template void modifyBaseInventory<ESM::Creature>(const std::string& actorId, const std::string& itemId, int amount);
     template void modifyBaseInventory<ESM::NPC>(const std::string& actorId, const std::string& itemId, int amount);
     template void modifyBaseInventory<ESM::Container>(const std::string& containerId, const std::string& itemId, int amount);
+
+    struct CreatureCustomDataResetter
+    {
+        MWWorld::Ptr mPtr;
+
+        CreatureCustomDataResetter(const MWWorld::Ptr& ptr);
+        ~CreatureCustomDataResetter();
+    };
 }
 
 #endif

@@ -1,11 +1,11 @@
 #include "cells.hpp"
 
 #include <components/debug/debuglog.hpp>
-#include <components/esm/esmreader.hpp>
-#include <components/esm/esmwriter.hpp>
+#include <components/esm3/esmreader.hpp>
+#include <components/esm3/esmwriter.hpp>
 #include <components/esm/defs.hpp>
-#include <components/esm/cellstate.hpp>
-#include <components/esm/cellref.hpp>
+#include <components/esm3/cellstate.hpp>
+#include <components/esm3/cellref.hpp>
 #include <components/loadinglistener/loadinglistener.hpp>
 #include <components/settings/settings.hpp>
 
@@ -36,7 +36,7 @@ namespace
             }
             bool cont = cell.second.forEach([&] (MWWorld::Ptr ptr)
             {
-                if(*ptr.getCellRef().getRefIdPtr() == id)
+                if (ptr.getCellRef().getRefId() == id)
                 {
                     return visitor(ptr);
                 }
@@ -97,29 +97,6 @@ void MWWorld::Cells::clear()
     std::fill(mIdCache.begin(), mIdCache.end(), std::make_pair("", (MWWorld::CellStore*)nullptr));
     mIdCacheIndex = 0;
 }
-
-/*
-    Start of tes3mp addition
-
-    Make it possible to clear the CellStore for a specific Cell,
-    allowing cells to be replaced from elsewhere in the code
-*/
-void MWWorld::Cells::clear(const ESM::Cell& cell)
-{
-    if (cell.isExterior())
-    {
-        std::pair <int, int> cellCoordinates;
-        cellCoordinates = std::make_pair(cell.getGridX(), cell.getGridY());
-        mExteriors.erase(cellCoordinates);
-    }
-    else if (mInteriors.count(Misc::StringUtils::lowerCase(cell.mName)) > 0)
-    {
-        mInteriors.erase(Misc::StringUtils::lowerCase(cell.mName));
-    }
-}
-/*
-    End of tes3mp addition
-*/
 
 MWWorld::Ptr MWWorld::Cells::getPtrAndCache (const std::string& name, CellStore& cellStore)
 {

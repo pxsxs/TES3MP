@@ -1,7 +1,7 @@
 #include "objects.hpp"
 
 #include <components/debug/debuglog.hpp>
-#include <components/esm/loadcont.hpp>
+#include <components/esm3/loadcont.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -12,10 +12,6 @@
 
 namespace MWMechanics
 {
-
-Objects::Objects()
-{
-}
 
 Objects::~Objects()
 {
@@ -88,7 +84,7 @@ void Objects::update(float duration, bool paused)
 
         for(auto& object : mObjects)
         {
-            if (object.first.getTypeName() != typeid(ESM::Container).name())
+            if (object.first.getType() != ESM::Container::sRecordId)
                 continue;
 
             if (object.second->isAnimPlaying("containeropen"))

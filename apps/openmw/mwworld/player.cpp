@@ -4,26 +4,15 @@
 
 #include <components/debug/debuglog.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/esm/esmreader.hpp>
-#include <components/esm/esmwriter.hpp>
-#include <components/esm/player.hpp>
+#include <components/esm3/esmreader.hpp>
+#include <components/esm3/esmwriter.hpp>
+#include <components/esm3/player.hpp>
 #include <components/esm/defs.hpp>
-#include <components/esm/loadbsgn.hpp>
+#include <components/esm3/loadbsgn.hpp>
 
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/inventorystore.hpp"
+#include "../mwworld/magiceffects.hpp"
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -34,9 +23,9 @@
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwmechanics/spellutil.hpp"
 
+#include "cellstore.hpp"
 #include "class.hpp"
 #include "ptr.hpp"
-#include "cellstore.hpp"
 
 namespace MWWorld
 {
@@ -50,7 +39,6 @@ namespace MWWorld
         mTeleported(false),
         mCurrentCrimeId(-1),
         mPaidCrimeId(-1),
-        mAttackingOrSpell(false),
         mJumping(false)
     {
         ESM::CellRef cellRef;
@@ -68,9 +56,9 @@ namespace MWWorld
         MWMechanics::NpcStats& stats = getPlayer().getClass().getNpcStats(getPlayer());
 
         for (int i=0; i<ESM::Skill::Length; ++i)
-            mSaveSkills[i] = stats.getSkill(i);
+            mSaveSkills[i] = stats.getSkill(i).getModified();
         for (int i=0; i<ESM::Attribute::Length; ++i)
-            mSaveAttributes[i] = stats.getAttribute(i);
+            mSaveAttributes[i] = stats.getAttribute(i).getModified();
     }
 
     void Player::restoreStats()
@@ -79,11 +67,20 @@ namespace MWWorld
         MWMechanics::CreatureStats& creatureStats = getPlayer().getClass().getCreatureStats(getPlayer());
         MWMechanics::NpcStats& npcStats = getPlayer().getClass().getNpcStats(getPlayer());
         MWMechanics::DynamicStat<float> health = creatureStats.getDynamic(0);
-        creatureStats.setHealth(int(health.getBase() / gmst.find("fWereWolfHealth")->mValue.getFloat()));
+        creatureStats.setHealth(health.getBase() / gmst.find("fWereWolfHealth")->mValue.getFloat());
         for (int i=0; i<ESM::Skill::Length; ++i)
-            npcStats.setSkill(i, mSaveSkills[i]);
+        {
+            auto& skill = npcStats.getSkill(i);
+            skill.restore(skill.getDamage());
+            skill.setModifier(mSaveSkills[i] - skill.getBase());
+        }
         for (int i=0; i<ESM::Attribute::Length; ++i)
-            npcStats.setAttribute(i, mSaveAttributes[i]);
+        {
+            auto attribute = npcStats.getAttribute(i);
+            attribute.restore(attribute.getDamage());
+            attribute.setModifier(mSaveAttributes[i] - attribute.getBase());
+            npcStats.setAttribute(i, attribute);
+        }
     }
 
     void Player::setWerewolfStats()
@@ -92,7 +89,7 @@ namespace MWWorld
         MWMechanics::CreatureStats& creatureStats = getPlayer().getClass().getCreatureStats(getPlayer());
         MWMechanics::NpcStats& npcStats = getPlayer().getClass().getNpcStats(getPlayer());
         MWMechanics::DynamicStat<float> health = creatureStats.getDynamic(0);
-        creatureStats.setHealth(int(health.getBase() * gmst.find("fWereWolfHealth")->mValue.getFloat()));
+        creatureStats.setHealth(health.getBase() * gmst.find("fWereWolfHealth")->mValue.getFloat());
         for(size_t i = 0;i < ESM::Attribute::Length;++i)
         {
             // Oh, Bethesda. It's "Intelligence".
@@ -100,7 +97,7 @@ namespace MWWorld
                                             ESM::Attribute::sAttributeNames[i]);
 
             MWMechanics::AttributeValue value = npcStats.getAttribute(i);
-            value.setBase(int(gmst.find(name)->mValue.getFloat()));
+            value.setModifier(gmst.find(name)->mValue.getFloat() - value.getModified());
             npcStats.setAttribute(i, value);
         }
 
@@ -114,9 +111,8 @@ namespace MWWorld
             std::string name = "fWerewolf"+((i==ESM::Skill::Mercantile) ? std::string("Merchantile") :
                                             ESM::Skill::sSkillNames[i]);
 
-            MWMechanics::SkillValue value = npcStats.getSkill(i);
-            value.setBase(int(gmst.find(name)->mValue.getFloat()));
-            npcStats.setSkill(i, value);
+            MWMechanics::SkillValue& value = npcStats.getSkill(i);
+            value.setModifier(gmst.find(name)->mValue.getFloat() - value.getModified());
         }
     }
 
@@ -254,30 +250,7 @@ namespace MWWorld
         if (!toActivate.getClass().hasToolTip(toActivate))
             return;
 
-        /*
-            Start of tes3mp change (major)
-
-            Disable unilateral activation on this client and expect the server's reply to our
-            packet to do it instead
-        */
-        //MWBase::Environment::get().getWorld()->activate(toActivate, player);
-        /*
-            End of tes3mp change (major)
-        */
-
-        /*
-            Start of tes3mp addition
-
-            Send an ID_OBJECT_ACTIVATE packet every time an object is activated here
-        */
-        mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectActivate(toActivate, player);
-        objectList->sendObjectActivate();
-        /*
-            End of tes3mp addition
-        */
+        MWBase::Environment::get().getWorld()->activate(toActivate, player);
     }
 
     bool Player::wasTeleported() const
@@ -292,12 +265,7 @@ namespace MWWorld
 
     void Player::setAttackingOrSpell(bool attackingOrSpell)
     {
-        mAttackingOrSpell = attackingOrSpell;
-    }
-
-    bool Player::getAttackingOrSpell() const
-    {
-        return mAttackingOrSpell;
+        getPlayer().getClass().getCreatureStats(getPlayer()).setAttackingOrSpell(attackingOrSpell);
     }
 
     void Player::setJumping(bool jumping)
@@ -340,7 +308,6 @@ namespace MWWorld
         mAutoMove = false;
         mForwardBackward = 0;
         mTeleported = false;
-        mAttackingOrSpell = false;
         mJumping = false;
         mCurrentCrimeId = -1;
         mPaidCrimeId = -1;
@@ -349,14 +316,12 @@ namespace MWWorld
 
         for (int i=0; i<ESM::Skill::Length; ++i)
         {
-            mSaveSkills[i].setBase(0);
-            mSaveSkills[i].setModifier(0);
+            mSaveSkills[i] = 0.f;
         }
 
         for (int i=0; i<ESM::Attribute::Length; ++i)
         {
-            mSaveAttributes[i].setBase(0);
-            mSaveAttributes[i].setModifier(0);
+            mSaveAttributes[i] = 0.f;
         }
 
         mMarkedPosition.pos[0] = 0;
@@ -393,9 +358,9 @@ namespace MWWorld
             player.mHasMark = false;
 
         for (int i=0; i<ESM::Attribute::Length; ++i)
-            mSaveAttributes[i].writeState(player.mSaveAttributes[i]);
+            player.mSaveAttributes[i] = mSaveAttributes[i];
         for (int i=0; i<ESM::Skill::Length; ++i)
-            mSaveSkills[i].writeState(player.mSaveSkills[i]);
+            player.mSaveSkills[i] = mSaveSkills[i];
 
         player.mPreviousItems = mPreviousItems;
 
@@ -416,6 +381,8 @@ namespace MWWorld
                 // this is the one object we can not silently drop.
                 throw std::runtime_error ("invalid player state record (object state)");
             }
+            if (reader.getFormat() < 17)
+                convertMagicEffects(player.mObject.mCreatureStats, player.mObject.mInventory, &player.mObject.mNpcStats);
 
             if (!player.mObject.mEnabled)
             {
@@ -426,14 +393,23 @@ namespace MWWorld
             mPlayer.load (player.mObject);
 
             for (int i=0; i<ESM::Attribute::Length; ++i)
-                mSaveAttributes[i].readState(player.mSaveAttributes[i]);
+                mSaveAttributes[i] = player.mSaveAttributes[i];
             for (int i=0; i<ESM::Skill::Length; ++i)
-                mSaveSkills[i].readState(player.mSaveSkills[i]);
+                mSaveSkills[i] = player.mSaveSkills[i];
 
-            if (player.mObject.mNpcStats.mWerewolfDeprecatedData && player.mObject.mNpcStats.mIsWerewolf)
+            if (player.mObject.mNpcStats.mIsWerewolf)
             {
-                saveStats();
-                setWerewolfStats();
+                if (player.mObject.mNpcStats.mWerewolfDeprecatedData)
+                {
+                    saveStats();
+                    setWerewolfStats();
+                }
+                else if (reader.getFormat() < 19)
+                {
+                    setWerewolfStats();
+                    if (player.mSetWerewolfAcrobatics)
+                        MWBase::Environment::get().getMechanicsManager()->applyWerewolfAcrobatics(getPlayer());
+                }
             }
 
             getPlayer().getClass().getCreatureStats(getPlayer()).getAiSequence().clear();

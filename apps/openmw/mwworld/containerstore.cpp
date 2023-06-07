@@ -1,24 +1,10 @@
 #include "containerstore.hpp"
 
 #include <cassert>
-#include <typeinfo>
 #include <stdexcept>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include <components/openmw-mp/TimedLog.hpp>
-/*
-    End of tes3mp addition
-*/
-
 #include <components/debug/debuglog.hpp>
-#include <components/esm/inventorystate.hpp>
+#include <components/esm3/inventorystate.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -219,25 +205,6 @@ MWWorld::ContainerStoreIterator MWWorld::ContainerStore::unstack(const Ptr &ptr,
     if (ptr.getRefData().getCount() <= count)
         return end();
     MWWorld::ContainerStoreIterator it = addNewStack(ptr, subtractItems(ptr.getRefData().getCount(false), count));
-
-    /*
-        Start of tes3mp addition
-
-        Send an ID_PLAYER_INVENTORY packet every time an item stack gets added for a player here
-    */
-    Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
-
-    if (container == player && this == &player.getClass().getContainerStore(player))
-    {
-        mwmp::LocalPlayer *localPlayer = mwmp::Main::get().getLocalPlayer();
-
-        if (!localPlayer->avoidSendingInventoryPackets)
-            localPlayer->sendItemChange(ptr, ptr.getRefData().getCount() - count, mwmp::InventoryChanges::ADD);
-    }
-    /*
-        End of tes3mp addition
-    */
-
     const std::string script = it->getClass().getScript(*it);
     if (!script.empty())
         MWBase::Environment::get().getWorld()->getLocalScripts().add(script, *it);
@@ -326,31 +293,6 @@ MWWorld::ContainerStoreIterator MWWorld::ContainerStore::add (const Ptr& itemPtr
     // The copy of the original item we just made
     MWWorld::Ptr item = *it;
 
-    /*
-        Start of tes3mp addition
-
-        Send an ID_PLAYER_INVENTORY packet every time an item gets added for a player here
-    */
-    if (this == &player.getClass().getContainerStore(player))
-    {
-        mwmp::LocalPlayer *localPlayer = mwmp::Main::get().getLocalPlayer();
-
-        if (!localPlayer->avoidSendingInventoryPackets)
-        {
-            int realCount = count;
-
-            if (itemPtr.getClass().isGold(itemPtr))
-            {
-                realCount = realCount * itemPtr.getClass().getValue(itemPtr);
-            }
-
-            localPlayer->sendItemChange(item, realCount, mwmp::InventoryChanges::ADD);
-        }
-    }
-    /*
-        End of tes3mp addition
-    */
-
     // we may have copied an item from the world, so reset a few things first
     item.getRefData().setBaseNode(nullptr); // Especially important, otherwise scripts on the item could think that it's actually in a cell
     ESM::Position pos;
@@ -397,16 +339,9 @@ MWWorld::ContainerStoreIterator MWWorld::ContainerStore::add (const Ptr& itemPtr
             item.getRefData().getLocals().setVarByInt(script, "onpcadd", 1);
     }
 
-    /*
-        Start of tes3mp change (major)
-
-        Only fire inventory events for actors in loaded cells to avoid crashes
-    */
-    if (mListener && !actorPtr.getClass().hasInventoryStore(actorPtr) && MWBase::Environment::get().getWorld()->isCellActive(*actorPtr.getCell()->getCell()))
+    // we should not fire event for InventoryStore yet - it has some custom logic
+    if (mListener && !actorPtr.getClass().hasInventoryStore(actorPtr))
         mListener->itemAdded(item, count);
-    /*
-        End of tes3mp change (major)
-    */
 
     return it;
 }
@@ -428,7 +363,7 @@ MWWorld::ContainerStoreIterator MWWorld::ContainerStore::addImp (const Ptr& ptr,
 
         for (MWWorld::ContainerStoreIterator iter (begin(type)); iter!=end(); ++iter)
         {
-            if (Misc::StringUtils::ciEqual((*iter).getCellRef().getRefId(), MWWorld::ContainerStore::sGoldId))
+            if (Misc::StringUtils::ciEqual(iter->getCellRef().getRefId(), MWWorld::ContainerStore::sGoldId))
             {
                 iter->getRefData().setCount(addItems(iter->getRefData().getCount(false), realCount));
                 flagAsModified();
@@ -555,24 +490,6 @@ int MWWorld::ContainerStore::remove(const Ptr& item, int count, const Ptr& actor
     if(resolveFirst)
         resolve();
 
-    /*
-        Start of tes3mp addition
-
-        Send an ID_PLAYER_INVENTORY packet every time an item gets removed for a player here
-    */
-    Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
-
-    if (this == &player.getClass().getContainerStore(player))
-    {
-        mwmp::LocalPlayer *localPlayer = mwmp::Main::get().getLocalPlayer();
-
-        if (!localPlayer->avoidSendingInventoryPackets)
-            localPlayer->sendItemChange(item, count, mwmp::InventoryChanges::REMOVE);
-    }
-    /*
-        End of tes3mp addition
-    */
-
     int toRemove = count;
     RefData& itemRef = item.getRefData();
 
@@ -590,17 +507,8 @@ int MWWorld::ContainerStore::remove(const Ptr& item, int count, const Ptr& actor
     flagAsModified();
 
     // we should not fire event for InventoryStore yet - it has some custom logic
-
-    /*
-        Start of tes3mp change (major)
-
-        Only fire inventory events for actors in loaded cells to avoid crashes
-    */
-    if (mListener && !actor.getClass().hasInventoryStore(actor) && MWBase::Environment::get().getWorld()->isCellActive(*actor.getCell()->getCell()))
+    if (mListener && !actor.getClass().hasInventoryStore(actor))
         mListener->itemRemoved(item, count - toRemove);
-    /*
-        End of tes3mp change (major)
-    */
 
     // number of removed items
     return count - toRemove;
@@ -658,7 +566,7 @@ void MWWorld::ContainerStore::addInitialItem (const std::string& id, const std::
 void MWWorld::ContainerStore::addInitialItemImp(const MWWorld::Ptr& ptr, const std::string& owner, int count,
                                                Misc::Rng::Seed* seed, bool topLevel)
 {
-    if (ptr.getTypeName()==typeid (ESM::ItemLevList).name())
+    if (ptr.getType()==ESM::ItemLevList::sRecordId)
     {
         if(!seed)
             return;
@@ -704,20 +612,6 @@ bool MWWorld::ContainerStore::isResolved() const
 {
     return mResolved;
 }
-
-/*
-    Start of tes3mp addiition
-
-    Make it possible to set the container's resolved state from elsewhere, to avoid unnecessary
-    refills before overriding its contents
-*/
-void MWWorld::ContainerStore::setResolved(bool state)
-{
-    mResolved = state;
-}
-/*
-    End of tes3mp addition
-*/
 
 void MWWorld::ContainerStore::resolve()
 {
@@ -798,44 +692,44 @@ int MWWorld::ContainerStore::getType (const ConstPtr& ptr)
     if (ptr.isEmpty())
         throw std::runtime_error ("can't put a non-existent object into a container");
 
-    if (ptr.getTypeName()==typeid (ESM::Potion).name())
+    if (ptr.getType()==ESM::Potion::sRecordId)
         return Type_Potion;
 
-    if (ptr.getTypeName()==typeid (ESM::Apparatus).name())
+    if (ptr.getType()==ESM::Apparatus::sRecordId)
         return Type_Apparatus;
 
-    if (ptr.getTypeName()==typeid (ESM::Armor).name())
+    if (ptr.getType()==ESM::Armor::sRecordId)
         return Type_Armor;
 
-    if (ptr.getTypeName()==typeid (ESM::Book).name())
+    if (ptr.getType()==ESM::Book::sRecordId)
         return Type_Book;
 
-    if (ptr.getTypeName()==typeid (ESM::Clothing).name())
+    if (ptr.getType()==ESM::Clothing::sRecordId)
         return Type_Clothing;
 
-    if (ptr.getTypeName()==typeid (ESM::Ingredient).name())
+    if (ptr.getType()==ESM::Ingredient::sRecordId)
         return Type_Ingredient;
 
-    if (ptr.getTypeName()==typeid (ESM::Light).name())
+    if (ptr.getType()==ESM::Light::sRecordId)
         return Type_Light;
 
-    if (ptr.getTypeName()==typeid (ESM::Lockpick).name())
+    if (ptr.getType()==ESM::Lockpick::sRecordId)
         return Type_Lockpick;
 
-    if (ptr.getTypeName()==typeid (ESM::Miscellaneous).name())
+    if (ptr.getType()==ESM::Miscellaneous::sRecordId)
         return Type_Miscellaneous;
 
-    if (ptr.getTypeName()==typeid (ESM::Probe).name())
+    if (ptr.getType()==ESM::Probe::sRecordId)
         return Type_Probe;
 
-    if (ptr.getTypeName()==typeid (ESM::Repair).name())
+    if (ptr.getType()==ESM::Repair::sRecordId)
         return Type_Repair;
 
-    if (ptr.getTypeName()==typeid (ESM::Weapon).name())
+    if (ptr.getType()==ESM::Weapon::sRecordId)
         return Type_Weapon;
 
-    throw std::runtime_error (
-        "Object '" + ptr.getCellRef().getRefId() + "' of type " + ptr.getTypeName() + " can not be placed into a container");
+    throw std::runtime_error("Object '" + ptr.getCellRef().getRefId() + "' of type " +
+                             std::string(ptr.getTypeDescription()) + " can not be placed into a container");
 }
 
 MWWorld::Ptr MWWorld::ContainerStore::findReplacement(const std::string& id)

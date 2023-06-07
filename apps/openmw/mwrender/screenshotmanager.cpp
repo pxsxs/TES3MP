@@ -12,6 +12,7 @@
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/shader/shadermanager.hpp>
+#include <components/sceneutil/depth.hpp>
 
 #include <components/settings/settings.hpp>
 
@@ -22,6 +23,7 @@
 #include "util.hpp"
 #include "vismask.hpp"
 #include "water.hpp"
+#include "postprocessor.hpp"
 
 namespace MWRender
 {
@@ -88,6 +90,21 @@ namespace MWRender
             int topPadding = std::max(0, static_cast<int>(screenH - screenW / imageaspect) / 2);
             int width = screenW - leftPadding*2;
             int height = screenH - topPadding*2;
+
+            // Ensure we are reading from the resolved framebuffer and not the multisampled render buffer. Also ensure that the readbuffer is set correctly with rendeirng to FBO.
+            // glReadPixel() cannot read from multisampled targets
+            PostProcessor* postProcessor = dynamic_cast<PostProcessor*>(renderInfo.getCurrentCamera()->getUserData());
+
+            if (postProcessor && postProcessor->getFbo())
+            {
+                osg::GLExtensions* ext = osg::GLExtensions::Get(renderInfo.getContextID(), false);
+                if (ext)
+                {
+                    ext->glBindFramebuffer(GL_FRAMEBUFFER_EXT, postProcessor->getFbo()->getHandle(renderInfo.getContextID()));
+                    renderInfo.getState()->glReadBuffer(GL_COLOR_ATTACHMENT0_EXT);
+                }
+            }
+
             mImage->readPixels(leftPadding, topPadding, width, height, GL_RGB, GL_UNSIGNED_BYTE);
             mImage->scaleImage(mWidth, mHeight, 1);
         }
@@ -177,6 +194,7 @@ namespace MWRender
             screenshotH = screenshotW;   // use square resolution for planet mapping
 
         std::vector<osg::ref_ptr<osg::Image>> images;
+        images.reserve(6);
 
         for (int i = 0; i < 6; ++i)
             images.push_back(new osg::Image);
@@ -242,7 +260,7 @@ namespace MWRender
         Shader::ShaderManager& shaderMgr = mResourceSystem->getSceneManager()->getShaderManager();
         osg::ref_ptr<osg::Shader> fragmentShader(shaderMgr.getShader("s360_fragment.glsl", defineMap,osg::Shader::FRAGMENT));
         osg::ref_ptr<osg::Shader> vertexShader(shaderMgr.getShader("s360_vertex.glsl", defineMap, osg::Shader::VERTEX));
-        osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
+        osg::ref_ptr<osg::StateSet> stateset = quad->getOrCreateStateSet();
 
         osg::ref_ptr<osg::Program> program(new osg::Program);
         program->addShader(fragmentShader);
@@ -252,9 +270,6 @@ namespace MWRender
         stateset->addUniform(new osg::Uniform("cubeMap", 0));
         stateset->addUniform(new osg::Uniform("mapping", screenshotMapping));
         stateset->setTextureAttributeAndModes(0, cubeTexture, osg::StateAttribute::ON);
-
-        quad->setStateSet(stateset);
-        quad->setUpdateCallback(nullptr);
 
         screenshotCamera->addChild(quad);
 
@@ -282,8 +297,9 @@ namespace MWRender
         camera->setRenderOrder(osg::Camera::PRE_RENDER);
         camera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
         camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT,osg::Camera::PIXEL_BUFFER_RTT);
-
         camera->setViewport(0, 0, w, h);
+
+        SceneUtil::setCameraClearDepth(camera);
 
         osg::ref_ptr<osg::Texture2D> texture (new osg::Texture2D);
         texture->setInternalFormat(GL_RGB);
@@ -312,22 +328,25 @@ namespace MWRender
         mRootNode->removeChild(camera);
     }
 
-    void ScreenshotManager::makeCubemapScreenshot(osg::Image *image, int w, int h, osg::Matrixd cameraTransform)
+    void ScreenshotManager::makeCubemapScreenshot(osg::Image *image, int w, int h, const osg::Matrixd& cameraTransform)
     {
         osg::ref_ptr<osg::Camera> rttCamera (new osg::Camera);
         float nearClip = Settings::Manager::getFloat("near clip", "Camera");
         float viewDistance = Settings::Manager::getFloat("viewing distance", "Camera");
         // each cubemap side sees 90 degrees
-        rttCamera->setProjectionMatrixAsPerspective(90.0, w/float(h), nearClip, viewDistance);
+        if (SceneUtil::AutoDepth::isReversed())
+            rttCamera->setProjectionMatrix(SceneUtil::getReversedZProjectionMatrixAsPerspectiveInf(90.0, w/float(h), nearClip));
+        else
+            rttCamera->setProjectionMatrixAsPerspective(90.0, w/float(h), nearClip, viewDistance);
         rttCamera->setViewMatrix(mViewer->getCamera()->getViewMatrix() * cameraTransform);
 
         rttCamera->setUpdateCallback(new NoTraverseCallback);
         rttCamera->addChild(mSceneRoot);
 
-        rttCamera->addChild(mWater->getReflectionCamera());
-        rttCamera->addChild(mWater->getRefractionCamera());
+        rttCamera->addChild(mWater->getReflectionNode());
+        rttCamera->addChild(mWater->getRefractionNode());
 
-        rttCamera->setCullMask(mViewer->getCamera()->getCullMask() & (~Mask_GUI));
+        rttCamera->setCullMask(mViewer->getCamera()->getCullMask() & ~(Mask_GUI|Mask_FirstPerson));
 
         rttCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 

@@ -1,7 +1,7 @@
 #ifndef GAME_MWCLASS_DOOR_H
 #define GAME_MWCLASS_DOOR_H
 
-#include <components/esm/loaddoor.hpp>
+#include <components/esm3/loaddoor.hpp>
 
 #include "../mwworld/class.hpp"
 
@@ -18,7 +18,8 @@ namespace MWClass
             void insertObjectRendering (const MWWorld::Ptr& ptr, const std::string& model, MWRender::RenderingInterface& renderingInterface) const override;
             ///< Add reference into a cell for rendering
 
-            void insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const override;
+            void insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const override;
+            void insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const override;
 
             bool isDoor() const override;
 

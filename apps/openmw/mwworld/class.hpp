@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <osg/Quat>
 #include <osg/Vec4f>
 
 #include "ptr.hpp"
@@ -53,17 +54,12 @@ namespace MWWorld
     /// \brief Base class for referenceable esm records
     class Class
     {
-            static std::map<std::string, std::shared_ptr<Class> > sClasses;
-
-            std::string mTypeName;
-
-            // not implemented
-            Class (const Class&);
-            Class& operator= (const Class&);
+            static std::map<unsigned int, std::shared_ptr<Class> > sClasses;
+            unsigned int mType;
 
         protected:
 
-            Class();
+            Class() = default;
 
             std::shared_ptr<Action> defaultItemActivate(const Ptr &ptr, const Ptr &actor) const;
             ///< Generate default action for activating inventory items
@@ -72,15 +68,18 @@ namespace MWWorld
 
         public:
 
-            virtual ~Class();
+            virtual ~Class() = default;
+            Class (const Class&) = delete;
+            Class& operator= (const Class&) = delete;
 
-            const std::string& getTypeName() const {
-                return mTypeName;
+            unsigned int getType() const {
+                return mType;
             }
 
             virtual void insertObjectRendering (const Ptr& ptr, const std::string& mesh, MWRender::RenderingInterface& renderingInterface) const;
-            virtual void insertObject(const Ptr& ptr, const std::string& mesh, MWPhysics::PhysicsSystem& physics) const;
+            virtual void insertObject(const Ptr& ptr, const std::string& mesh, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const;
             ///< Add reference into a cell for rendering (default implementation: don't render anything).
+            virtual void insertObjectPhysics(const Ptr& ptr, const std::string& mesh, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const;
 
             virtual std::string getName (const ConstPtr& ptr) const = 0;
             ///< \return name or ID; can return an empty string.
@@ -155,32 +154,10 @@ namespace MWWorld
             ///< Return inventory store or throw an exception, if class does not have a
             /// inventory store (default implementation: throw an exception)
 
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether a class has a container store
-            */
-            virtual bool hasContainerStore(const Ptr& ptr) const;
-            ///< Does this object have a container store? (default implementation: false)
-            /*
-                End of tes3mp addition
-            */
-
             virtual bool hasInventoryStore (const Ptr& ptr) const;
             ///< Does this object have an inventory store, i.e. equipment slots? (default implementation: false)
 
             virtual bool canLock (const ConstPtr& ptr) const;
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether a class can be harvested
-            */
-            virtual bool canBeHarvested(const ConstPtr& ptr) const;
-            ///< Can this object be harvested? (default implementation: false)
-            /*
-                End of tes3mp addition
-            */
 
             virtual void setRemainingUsageTime (const Ptr& ptr, float duration) const;
             ///< Sets the remaining duration of the object, such as an equippable light
@@ -360,10 +337,10 @@ namespace MWWorld
                 const;
             ///< Write additional state from \a ptr into \a state.
 
-            static const Class& get (const std::string& key);
+            static const Class& get (unsigned int key);
             ///< If there is no class for this \a key, an exception is thrown.
 
-            static void registerClass (const std::string& key,  std::shared_ptr<Class> instance);
+            static void registerClass (unsigned int key,  std::shared_ptr<Class> instance);
 
             virtual int getBaseGold(const MWWorld::ConstPtr& ptr) const;
 

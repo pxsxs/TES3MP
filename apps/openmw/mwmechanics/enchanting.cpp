@@ -3,20 +3,6 @@
 #include <components/misc/rng.hpp>
 #include <components/settings/settings.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/Worldstate.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwworld/manualref.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/containerstore.hpp"
@@ -36,6 +22,7 @@ namespace MWMechanics
     Enchanting::Enchanting()
         : mCastStyle(ESM::Enchantment::CastOnce)
         , mSelfEnchanting(false)
+        , mObjectType(0)
         , mWeaponType(-1)
     {}
 
@@ -43,11 +30,11 @@ namespace MWMechanics
     {
         mOldItemPtr=oldItem;
         mWeaponType = -1;
-        mObjectType.clear();
+        mObjectType = 0;
         if(!itemEmpty())
         {
-            mObjectType = mOldItemPtr.getTypeName();
-            if (mObjectType == typeid(ESM::Weapon).name())
+            mObjectType = mOldItemPtr.getType();
+            if (mObjectType == ESM::Weapon::sRecordId)
                 mWeaponType = mOldItemPtr.get<ESM::Weapon>()->mBase->mData.mType;
         }
     }
@@ -110,35 +97,14 @@ namespace MWMechanics
             enchantmentPtr = MWBase::Environment::get().getWorld()->createRecord (enchantment);
 
         // Apply the enchantment
+        std::string newItemId = mOldItemPtr.getClass().applyEnchantment(mOldItemPtr, enchantmentPtr->mId, getGemCharge(), mNewItemName);
 
-        /*
-            Start of tes3mp change (major)
-
-            Send the enchantment's record to the server
-
-            Don't add the new item to the player's inventory and instead expect the server to
-            add it
-
-            Store the quantity used for the enchantment so it can be retrieved in applyEnchantment()
-            when applicable
-            
-            The applyEnchantment() method is where the record of the newly enchanted item will be sent
-            to the server, causing the server to send back the player's inventory with the new item
-            included
-        */
-        mwmp::Main::get().getNetworking()->getWorldstate()->sendEnchantmentRecord(enchantmentPtr);
-
+        // Add the new item to player inventory and remove the old one
         store.remove(mOldItemPtr, count, player);
+        store.add(newItemId, count, player);
 
         if(!mSelfEnchanting)
             payForEnchantment();
-
-        mwmp::Main::get().getLocalPlayer()->storeLastEnchantmentQuantity(count);
-
-        std::string newItemId = mOldItemPtr.getClass().applyEnchantment(mOldItemPtr, enchantmentPtr->mId, getGemCharge(), mNewItemName);
-        /*
-            End of tes3mp change (major)
-        */
 
         return true;
     }
@@ -150,7 +116,7 @@ namespace MWMechanics
 
         const bool powerfulSoul = getGemCharge() >= \
                 MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>().find ("iSoulAmountForConstantEffect")->mValue.getInteger();
-        if ((mObjectType == typeid(ESM::Armor).name()) || (mObjectType == typeid(ESM::Clothing).name()))
+        if ((mObjectType == ESM::Armor::sRecordId) || (mObjectType == ESM::Clothing::sRecordId))
         { // Armor or Clothing
             switch(mCastStyle)
             {
@@ -185,7 +151,7 @@ namespace MWMechanics
                     return;
             }
         }
-        else if(mObjectType == typeid(ESM::Book).name())
+        else if(mObjectType == ESM::Book::sRecordId)
         { // Scroll or Book
             mCastStyle = ESM::Enchantment::CastOnce;
             return;
@@ -390,10 +356,10 @@ namespace MWMechanics
             ESM::WeaponType::Class weapclass = MWMechanics::getWeaponType(mWeaponType)->mWeaponClass;
             if (weapclass == ESM::WeaponType::Thrown || weapclass == ESM::WeaponType::Ammo)
             {
-                static const float multiplier = std::max(0.f, std::min(1.0f, Settings::Manager::getFloat("projectiles enchant multiplier", "Game")));
+                static const float multiplier = std::clamp(Settings::Manager::getFloat("projectiles enchant multiplier", "Game"), 0.f, 1.f);
                 MWWorld::Ptr player = getPlayer();
-                int itemsInInventoryCount = player.getClass().getContainerStore(player).count(mOldItemPtr.getCellRef().getRefId());
-                count = std::min(itemsInInventoryCount, std::max(1, int(getGemCharge() * multiplier / enchantPoints)));
+                count = player.getClass().getContainerStore(player).count(mOldItemPtr.getCellRef().getRefId());
+                count = std::clamp<int>(getGemCharge() * multiplier / enchantPoints, 1, count);
             }
         }
 

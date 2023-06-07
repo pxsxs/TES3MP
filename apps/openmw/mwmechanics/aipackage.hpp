@@ -108,7 +108,7 @@ namespace MWMechanics
             /// Upon adding this Ai package, should the Ai Sequence attempt to cancel previous Ai packages (default true)?
             bool shouldCancelPreviousAi() const { return mOptions.mShouldCancelPreviousAi; }
 
-            /// Return true if this package should repeat. Currently only used for Wander packages.
+            /// Return true if this package should repeat.
             bool getRepeat() const { return mOptions.mRepeat; }
 
             virtual osg::Vec3f getDestination() const { return osg::Vec3f(0, 0, 0); }
@@ -129,7 +129,8 @@ namespace MWMechanics
         protected:
             /// Handles path building and shortcutting with obstacles avoiding
             /** \return If the actor has arrived at his destination **/
-            bool pathTo(const MWWorld::Ptr& actor, const osg::Vec3f& dest, float duration, float destTolerance = 0.0f);
+            bool pathTo(const MWWorld::Ptr& actor, const osg::Vec3f& dest, float duration,
+                        float destTolerance = 0.0f, float endTolerance = 0.0f, PathType pathType = PathType::Full);
 
             /// Check if there aren't any obstacles along the path to make shortcut possible
             /// If a shortcut is possible then path will be cleared and filled with the destination point.

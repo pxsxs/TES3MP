@@ -1,19 +1,7 @@
 #include "container.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/esm/loadcont.hpp>
-#include <components/esm/containerstate.hpp>
+#include <components/esm3/loadcont.hpp>
+#include <components/esm3/containerstate.hpp>
 #include <components/settings/settings.hpp>
 
 #include "../mwbase/environment.hpp"
@@ -21,11 +9,8 @@
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/soundmanager.hpp"
 
-#include "../mwworld/ptr.hpp"
 #include "../mwworld/failedaction.hpp"
 #include "../mwworld/nullaction.hpp"
-#include "../mwworld/containerstore.hpp"
-#include "../mwworld/customdata.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/actionharvest.hpp"
@@ -118,10 +103,15 @@ namespace MWClass
         }
     }
 
-    void Container::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
+    void Container::insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const
+    {
+        insertObjectPhysics(ptr, model, rotation, physics);
+    }
+
+    void Container::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const
     {
         if(!model.empty())
-            physics.addObject(ptr, model);
+            physics.addObject(ptr, model, rotation, MWPhysics::CollisionType_World);
     }
 
     std::string Container::getModel(const MWWorld::ConstPtr &ptr) const
@@ -182,66 +172,14 @@ namespace MWClass
         if (isLocked && hasKey)
         {
             MWBase::Environment::get().getWindowManager ()->messageBox (keyName + " #{sKeyUsed}");
-
-            /*
-                Start of tes3mp change (major)
-
-                Disable unilateral unlocking on this client and expect the server's reply to our
-                packet to do it instead
-            */
-            //ptr.getCellRef().unlock();
-            /*
-                End of tes3mp change (major)
-            */
-
+            ptr.getCellRef().unlock();
             // using a key disarms the trap
             if(isTrapped)
             {
-                /*
-                    Start of tes3mp change (major)
-
-                    Disable unilateral trap disarming on this client and expect the server's reply to our
-                    packet to do it instead
-                */
-                //ptr.getCellRef().setTrap("");
-                //MWBase::Environment::get().getSoundManager()->playSound3D(ptr, "Disarm Trap", 1.0f, 1.0f);
-                /*
-                    End of tes3mp change (major)
-                */
-
+                ptr.getCellRef().setTrap("");
+                MWBase::Environment::get().getSoundManager()->playSound3D(ptr, "Disarm Trap", 1.0f, 1.0f);
                 isTrapped = false;
-
-                /*
-                    Start of tes3mp addition
-
-                    Send an ID_OBJECT_TRAP packet every time a trap is disarmed
-                */
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectTrap(ptr, ptr.getRefData().getPosition(), true);
-                objectList->sendObjectTrap();
-                /*
-                    End of tes3mp addition
-                */
             }
-
-            /*
-                Start of tes3mp addition
-
-                Send an ID_OBJECT_LOCK packet every time a container is unlocked here
-            */
-            if (isLocked)
-            {
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectLock(ptr, 0);
-                objectList->sendObjectLock();
-            }
-            /*
-                End of tes3mp addition
-            */
         }
 
 
@@ -301,7 +239,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Container);
 
-        registerClass (typeid (ESM::Container).name(), instance);
+        registerClass (ESM::Container::sRecordId, instance);
     }
 
     bool Container::hasToolTip (const MWWorld::ConstPtr& ptr) const

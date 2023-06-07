@@ -1,17 +1,5 @@
 #include "dialogueextensions.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwbase/windowmanager.hpp"
-#include "../mwmp/Main.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include <components/compiler/extensions.hpp>
 #include <components/compiler/opcodes.hpp>
 #include <components/debug/debuglog.hpp>
@@ -55,18 +43,6 @@ namespace MWScript
                     // Invoking Journal with a non-existing index is allowed, and triggers no errors. Seriously? :(
                     try
                     {
-                        /*
-                            Start of tes3mp addition
-
-                            Send an ID_PLAYER_JOURNAL packet every time a new journal entry is added
-                            through a script
-                        */
-                        if (mwmp::Main::get().getLocalPlayer()->isLoggedIn() && !MWBase::Environment::get().getJournal()->hasEntry(quest, index))
-                            mwmp::Main::get().getLocalPlayer()->sendJournalEntry(quest, index, ptr);
-                        /*
-                            End of tes3mp addition
-                        */
-
                         MWBase::Environment::get().getJournal()->addEntry (quest, index, ptr);
                     }
                     catch (...)
@@ -90,18 +66,6 @@ namespace MWScript
                     runtime.pop();
 
                     MWBase::Environment::get().getJournal()->setJournalIndex (quest, index);
-
-                    /*
-                        Start of tes3mp addition
-
-                        Send an ID_PLAYER_JOURNAL packet every time a journal index is set
-                        through a script
-                    */
-                    if (mwmp::Main::get().getLocalPlayer()->isLoggedIn())
-                        mwmp::Main::get().getLocalPlayer()->sendJournalIndex(quest, index);
-                    /*
-                        End of tes3mp addition
-                    */
                 }
         };
 
@@ -129,19 +93,6 @@ namespace MWScript
                 {
                     std::string topic = runtime.getStringLiteral (runtime[0].mInteger);
                     runtime.pop();
-
-                    /*
-                        Start of tes3mp addition
-
-                        Send an ID_PLAYER_TOPIC packet every time a new topic is added
-                        through a script
-                    */
-                    if (mwmp::Main::get().getLocalPlayer()->isLoggedIn() &&
-                        MWBase::Environment::get().getDialogueManager()->isNewTopic(Misc::StringUtils::lowerCase(topic)))
-                        mwmp::Main::get().getLocalPlayer()->sendTopic(Misc::StringUtils::lowerCase(topic));
-                    /*
-                        End of tes3mp addition
-                    */
 
                     MWBase::Environment::get().getDialogueManager()->addTopic(topic);
                 }
@@ -191,17 +142,7 @@ namespace MWScript
                         return;
                     }
 
-                    /*
-                        Start of tes3mp change (major)
-
-                        Don't start a dialogue if the target is already engaged in one, thus
-                        preventing infinite greeting loops
-                    */
-                    if (!MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_Dialogue))
-                        MWBase::Environment::get().getWindowManager()->pushGuiMode(MWGui::GM_Dialogue, ptr);
-                    /*
-                        End of tes3mp change (major)
-                    */
+                    MWBase::Environment::get().getWindowManager()->pushGuiMode(MWGui::GM_Dialogue, ptr);
                 }
         };
 
@@ -343,28 +284,28 @@ namespace MWScript
 
         void installOpcodes (Interpreter::Interpreter& interpreter)
         {
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeJournal, new OpJournal<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeJournalExplicit, new OpJournal<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSetJournalIndex, new OpSetJournalIndex);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeGetJournalIndex, new OpGetJournalIndex);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeAddTopic, new OpAddTopic);
-            interpreter.installSegment3 (Compiler::Dialogue::opcodeChoice,new OpChoice);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeForceGreeting, new OpForceGreeting<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeForceGreetingExplicit, new OpForceGreeting<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeGoodbye, new OpGoodbye);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeGetReputation, new OpGetReputation<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSetReputation, new OpSetReputation<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeModReputation, new OpModReputation<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSetReputationExplicit, new OpSetReputation<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeModReputationExplicit, new OpModReputation<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeGetReputationExplicit, new OpGetReputation<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSameFaction, new OpSameFaction<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSameFactionExplicit, new OpSameFaction<ExplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeModFactionReaction, new OpModFactionReaction);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeSetFactionReaction, new OpSetFactionReaction);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeGetFactionReaction, new OpGetFactionReaction);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeClearInfoActor, new OpClearInfoActor<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Dialogue::opcodeClearInfoActorExplicit, new OpClearInfoActor<ExplicitRef>);
+            interpreter.installSegment5<OpJournal<ImplicitRef>>(Compiler::Dialogue::opcodeJournal);
+            interpreter.installSegment5<OpJournal<ExplicitRef>>(Compiler::Dialogue::opcodeJournalExplicit);
+            interpreter.installSegment5<OpSetJournalIndex>(Compiler::Dialogue::opcodeSetJournalIndex);
+            interpreter.installSegment5<OpGetJournalIndex>(Compiler::Dialogue::opcodeGetJournalIndex);
+            interpreter.installSegment5<OpAddTopic>(Compiler::Dialogue::opcodeAddTopic);
+            interpreter.installSegment3<OpChoice>(Compiler::Dialogue::opcodeChoice);
+            interpreter.installSegment5<OpForceGreeting<ImplicitRef>>(Compiler::Dialogue::opcodeForceGreeting);
+            interpreter.installSegment5<OpForceGreeting<ExplicitRef>>(Compiler::Dialogue::opcodeForceGreetingExplicit);
+            interpreter.installSegment5<OpGoodbye>(Compiler::Dialogue::opcodeGoodbye);
+            interpreter.installSegment5<OpGetReputation<ImplicitRef>>(Compiler::Dialogue::opcodeGetReputation);
+            interpreter.installSegment5<OpSetReputation<ImplicitRef>>(Compiler::Dialogue::opcodeSetReputation);
+            interpreter.installSegment5<OpModReputation<ImplicitRef>>(Compiler::Dialogue::opcodeModReputation);
+            interpreter.installSegment5<OpSetReputation<ExplicitRef>>(Compiler::Dialogue::opcodeSetReputationExplicit);
+            interpreter.installSegment5<OpModReputation<ExplicitRef>>(Compiler::Dialogue::opcodeModReputationExplicit);
+            interpreter.installSegment5<OpGetReputation<ExplicitRef>>(Compiler::Dialogue::opcodeGetReputationExplicit);
+            interpreter.installSegment5<OpSameFaction<ImplicitRef>>(Compiler::Dialogue::opcodeSameFaction);
+            interpreter.installSegment5<OpSameFaction<ExplicitRef>>(Compiler::Dialogue::opcodeSameFactionExplicit);
+            interpreter.installSegment5<OpModFactionReaction>(Compiler::Dialogue::opcodeModFactionReaction);
+            interpreter.installSegment5<OpSetFactionReaction>(Compiler::Dialogue::opcodeSetFactionReaction);
+            interpreter.installSegment5<OpGetFactionReaction>(Compiler::Dialogue::opcodeGetFactionReaction);
+            interpreter.installSegment5<OpClearInfoActor<ImplicitRef>>(Compiler::Dialogue::opcodeClearInfoActor);
+            interpreter.installSegment5<OpClearInfoActor<ExplicitRef>>(Compiler::Dialogue::opcodeClearInfoActorExplicit);
         }
     }
 

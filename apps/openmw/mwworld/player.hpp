@@ -9,12 +9,12 @@
 #include "../mwmechanics/drawstate.hpp"
 #include "../mwmechanics/stat.hpp"
 
-#include <components/esm/loadskil.hpp>
+#include <components/esm3/loadskil.hpp>
 #include <components/esm/attr.hpp>
+#include <components/esm3/loadnpc.hpp>
 
 namespace ESM
 {
-    struct NPC;
     class ESMWriter;
     class ESMReader;
 }
@@ -53,10 +53,9 @@ namespace MWWorld
         PreviousItems mPreviousItems;
 
         // Saved stats prior to becoming a werewolf
-        MWMechanics::SkillValue mSaveSkills[ESM::Skill::Length];
-        MWMechanics::AttributeValue mSaveAttributes[ESM::Attribute::Length];
+        float mSaveSkills[ESM::Skill::Length];
+        float mSaveAttributes[ESM::Attribute::Length];
 
-        bool mAttackingOrSpell;
         bool mJumping;
 
     public:
@@ -112,7 +111,6 @@ namespace MWWorld
         void setTeleported(bool teleported);
 
         void setAttackingOrSpell(bool attackingOrSpell);
-        bool getAttackingOrSpell() const;
 
         void setJumping(bool jumping);
         bool getJumping() const;

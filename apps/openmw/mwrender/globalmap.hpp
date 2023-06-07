@@ -41,11 +41,7 @@ namespace MWRender
         int getWidth() const { return mWidth; }
         int getHeight() const { return mHeight; }
 
-        int getCellSize() const { return mCellSize; }
-
         void worldPosToImageSpace(float x, float z, float& imageX, float& imageY);
-
-        void cellTopLeftCornerToImageSpace(int x, int y, float& imageX, float& imageY);
 
         void exploreCell (int cellX, int cellY, osg::ref_ptr<osg::Texture2D> localMapTexture);
 
@@ -62,17 +58,6 @@ namespace MWRender
         void removeCamera(osg::Camera* cam);
 
         bool copyResult(osg::Camera* cam, unsigned int frame);
-
-        /*
-            Start of tes3mp addition
-
-            Allow the setting of the image data for a global map tile from elsewhere
-            in the code
-        */
-        void setImage(int cellX, int cellY, const std::vector<char>& imageData);
-        /*
-            End of tes3mp addition
-        */
 
         /**
          * Mark a camera for cleanup in the next update. For internal use only.

@@ -5,16 +5,7 @@
 #include <extern/oics/ICSChannelListener.h>
 #include <extern/oics/ICSInputControlSystem.h>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/GUIController.hpp"
-/*
-    End of tes3mp addition
-*/
+#include <components/sdlutil/sdlmappings.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/inputmanager.hpp"
@@ -24,7 +15,6 @@
 #include "../mwworld/player.hpp"
 
 #include "actions.hpp"
-#include "sdlmappings.hpp"
 
 namespace MWInput
 {
@@ -557,9 +547,9 @@ namespace MWInput
         ICS::Control* c = mInputBinder->getChannel(action)->getAttachedControls().front().control;
 
         if (mInputBinder->getJoystickAxisBinding(c, sFakeDeviceId, ICS::Control::INCREASE) != ICS::InputControlSystem::UNASSIGNED)
-            return sdlControllerAxisToString(mInputBinder->getJoystickAxisBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
+            return SDLUtil::sdlControllerAxisToString(mInputBinder->getJoystickAxisBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
         else if (mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE) != ICS_MAX_DEVICE_BUTTONS)
-            return sdlControllerButtonToString(mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
+            return SDLUtil::sdlControllerButtonToString(mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
         else
             return "#{sNone}";
     }
@@ -626,16 +616,6 @@ namespace MWInput
 
     void BindingsManager::keyPressed(const SDL_KeyboardEvent &arg)
     {
-        /*
-            Start of tes3mp addition
-
-            Pass the pressed key to the multiplayer-specific GUI controller
-        */
-        mwmp::Main::get().getGUIController()->pressedKey(arg.keysym.scancode);
-        /*
-            End of tes3mp addition
-        */
-
         mInputBinder->keyPressed(arg);
     }
 
@@ -672,6 +652,15 @@ namespace MWInput
     SDL_Scancode BindingsManager::getKeyBinding(int actionId)
     {
         return mInputBinder->getKeyBinding(mInputBinder->getControl(actionId), ICS::Control::INCREASE);
+    }
+
+    SDL_GameController* BindingsManager::getControllerOrNull() const
+    {
+        const auto& controllers = mInputBinder->getJoystickInstanceMap();
+        if (controllers.empty())
+            return nullptr;
+        else
+            return controllers.begin()->second;
     }
 
     void BindingsManager::actionValueChanged(int action, float currentValue, float previousValue)
@@ -715,17 +704,6 @@ namespace MWInput
 
                 else
                 {
-                    /*
-                        Start of tes3mp addition
-
-                        Prevent players from starting attacks while in the persuasion submenu in dialogue
-                    */
-                    if (MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_Dialogue))
-                        return;
-                    /*
-                        End of tes3mp addition
-                    */
-
                     MWWorld::Player& player = MWBase::Environment::get().getWorld()->getPlayer();
                     MWMechanics::DrawState_ state = player.getDrawState();
                     player.setAttackingOrSpell(currentValue != 0 && state != MWMechanics::DrawState_Nothing);

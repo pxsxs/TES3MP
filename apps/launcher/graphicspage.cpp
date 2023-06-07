@@ -14,8 +14,7 @@
 #include <SDL_video.h>
 
 #include <numeric>
-
-#include <components/files/configurationmanager.hpp>
+#include <array>
 
 QString getAspect(int x, int y)
 {
@@ -48,7 +47,6 @@ Launcher::GraphicsPage::GraphicsPage(QWidget *parent)
     connect(screenComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(screenChanged(int)));
     connect(framerateLimitCheckBox, SIGNAL(toggled(bool)), this, SLOT(slotFramerateLimitToggled(bool)));
     connect(shadowDistanceCheckBox, SIGNAL(toggled(bool)), this, SLOT(slotShadowDistLimitToggled(bool)));
-
 }
 
 bool Launcher::GraphicsPage::setupSDL()

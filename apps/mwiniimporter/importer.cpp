@@ -1,13 +1,12 @@
 #include "importer.hpp"
 
 #include <iostream>
-#include <sstream>
 #include <components/misc/stringops.hpp>
-#include <components/esm/esmreader.hpp>
+#include <components/esm3/esmreader.hpp>
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/version.hpp>
+
 
 namespace bfs = boost::filesystem;
 
@@ -778,7 +777,7 @@ void MwIniImporter::mergeFallback(multistrmap &cfg, const multistrmap &ini) cons
 }
 
 void MwIniImporter::insertMultistrmap(multistrmap &cfg, const std::string& key, const std::string& value) {
-    const multistrmap::const_iterator it = cfg.find(key);
+    const auto it = cfg.find(key);
     if(it == cfg.end()) {
         cfg.insert(std::make_pair (key, std::vector<std::string>() ));
     }
@@ -791,7 +790,7 @@ void MwIniImporter::importArchives(multistrmap &cfg, const multistrmap &ini) con
     std::string archive;
 
     // Search archives listed in ini file
-    multistrmap::const_iterator it = ini.begin();
+    auto it = ini.begin();
     for(int i=0; it != ini.end(); i++) {
         archive = baseArchive;
         archive.append(std::to_string(i));
@@ -813,7 +812,7 @@ void MwIniImporter::importArchives(multistrmap &cfg, const multistrmap &ini) con
     // does not appears in the ini file
     cfg["fallback-archive"].push_back("Morrowind.bsa");
 
-    for(std::vector<std::string>::const_iterator iter=archives.begin(); iter!=archives.end(); ++iter) {
+    for(auto iter=archives.begin(); iter!=archives.end(); ++iter) {
         cfg["fallback-archive"].push_back(*iter);
     }
 }
@@ -886,7 +885,7 @@ void MwIniImporter::importGameFiles(multistrmap &cfg, const multistrmap &ini, co
 
     dataPaths.push_back(iniFilename.parent_path() /= "Data Files");
 
-    multistrmap::const_iterator it = ini.begin();
+    auto it = ini.begin();
     for (int i=0; it != ini.end(); i++)
     {
         std::string gameFile = baseGameFile;
@@ -969,7 +968,7 @@ void MwIniImporter::importGameFiles(multistrmap &cfg, const multistrmap &ini, co
 void MwIniImporter::writeToFile(std::ostream &out, const multistrmap &cfg) {
 
     for(multistrmap::const_iterator it=cfg.begin(); it != cfg.end(); ++it) {
-        for(std::vector<std::string>::const_iterator entry=it->second.begin(); entry != it->second.end(); ++entry) {
+        for(auto entry=it->second.begin(); entry != it->second.end(); ++entry) {
             out << (it->first) << "=" << (*entry) << std::endl;
         }
     }

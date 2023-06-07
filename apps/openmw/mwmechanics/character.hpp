@@ -188,7 +188,6 @@ class CharacterController : public MWRender::Animation::TextKeyListener
 
     std::string mAttackType; // slash, chop or thrust
 
-    bool mAttackingOrSpell;
     bool mCastingManualSpell;
 
     float mTimeUntilWake;
@@ -234,6 +233,10 @@ class CharacterController : public MWRender::Animation::TextKeyListener
     std::string fallbackShortWeaponGroup(const std::string& baseGroupName, MWRender::Animation::BlendMask* blendMask = nullptr);
 
     std::string getWeaponAnimation(int weaponType) const;
+
+    bool getAttackingOrSpell();
+    void setAttackingOrSpell(bool attackingOrSpell);
+
 
 public:
     CharacterController(const MWWorld::Ptr &ptr, MWRender::Animation *anim);
@@ -285,8 +288,7 @@ public:
     bool isAttackingOrSpell() const;
 
     void setVisibility(float visibility);
-    void setAttackingOrSpell(bool attackingOrSpell);
-    void castSpell(const std::string spellId, bool manualSpell=false);
+    void castSpell(const std::string& spellId, bool manualSpell=false);
     void setAIAttackType(const std::string& attackType);
     static void setAttackTypeRandomly(std::string& attackType);
 
@@ -294,16 +296,6 @@ public:
     bool readyToStartAttack() const;
 
     float getAttackStrength() const;
-
-    /*
-        Start of tes3mp addition
-
-        Make it possible to get the current attack type from elsewhere in the code
-    */
-    std::string getAttackType() const;
-    /*
-        End of tes3mp addition
-    */
 
     /// @see Animation::setActive
     void setActive(int active);

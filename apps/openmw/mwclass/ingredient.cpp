@@ -1,18 +1,6 @@
 #include "ingredient.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/Utils.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/esm/loadingr.hpp>
+#include <components/esm3/loadingr.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -38,32 +26,6 @@ namespace MWClass
         if (!model.empty()) {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
-    }
-
-    void Ingredient::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
-    {
-        // TODO: add option somewhere to enable collision for placeable objects
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to enable collision for this object class from a packet
-        */
-        if (!model.empty())
-        {
-            mwmp::BaseWorldstate *worldstate = mwmp::Main::get().getNetworking()->getWorldstate();
-
-            if (worldstate->hasPlacedObjectCollision || Utils::vectorContains(worldstate->enforcedCollisionRefIds, ptr.getCellRef().getRefId()))
-            {
-                if (worldstate->useActorCollisionForPlacedObjects)
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_Actor);
-                else
-                    physics.addObject(ptr, model, MWPhysics::CollisionType_World);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
     }
 
     std::string Ingredient::getModel(const MWWorld::ConstPtr &ptr) const
@@ -119,7 +81,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Ingredient);
 
-        registerClass (typeid (ESM::Ingredient).name(), instance);
+        registerClass (ESM::Ingredient::sRecordId, instance);
     }
 
     std::string Ingredient::getUpSoundId (const MWWorld::ConstPtr& ptr) const

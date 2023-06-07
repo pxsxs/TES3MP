@@ -8,17 +8,6 @@
 
 #include <components/debug/debuglog.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/GUIController.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/environment.hpp"
 
@@ -90,7 +79,7 @@ void KeyboardNavigation::restoreFocus(int mode)
     if (found != mKeyFocus.end())
     {
         MyGUI::Widget* w = found->second;
-        if (w && w->getVisible() && w->getEnabled())
+        if (w && w->getVisible() && w->getEnabled() && w->getInheritedVisible() && w->getInheritedEnabled())
             MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(found->second);
     }
 }
@@ -104,19 +93,6 @@ void KeyboardNavigation::_unlinkWidget(MyGUI::Widget *widget)
         mCurrentFocus = nullptr;
 }
 
-#if MYGUI_VERSION < MYGUI_DEFINE_VERSION(3,2,3)
-void styleFocusedButton(MyGUI::Widget* w)
-{
-    if (w)
-    {
-        if (MyGUI::Button* b = w->castType<MyGUI::Button>(false))
-        {
-            b->_setWidgetState("highlighted");
-        }
-    }
-}
-#endif
-
 bool isRootParent(MyGUI::Widget* widget, MyGUI::Widget* root)
 {
     while (widget && widget->getParent())
@@ -129,15 +105,7 @@ void KeyboardNavigation::onFrame()
     if (!mEnabled)
         return;
 
-    /*
-        Start of tes3mp change (major)
-
-        Don't clear key focus widget when not in menus if the chat is currently focused
-    */
-    if (!MWBase::Environment::get().getWindowManager()->isGuiMode() && !mwmp::Main::get().getGUIController()->getChatEditState())
-    /*
-        End of tes3mp change (major)
-    */
+    if (!MWBase::Environment::get().getWindowManager()->isGuiMode())
     {
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
         return;
@@ -147,9 +115,6 @@ void KeyboardNavigation::onFrame()
 
     if (focus == mCurrentFocus)
     {
-#if MYGUI_VERSION < MYGUI_DEFINE_VERSION(3,2,3)
-        styleFocusedButton(mCurrentFocus);
-#endif
         return;
     }
 
@@ -162,19 +127,8 @@ void KeyboardNavigation::onFrame()
 
     if (focus != mCurrentFocus)
     {
-#if MYGUI_VERSION < MYGUI_DEFINE_VERSION(3,2,3)
-        if (mCurrentFocus)
-        {
-            if (MyGUI::Button* b = mCurrentFocus->castType<MyGUI::Button>(false))
-                b->_setWidgetState("normal");
-        }
-#endif
         mCurrentFocus = focus;
     }
-
-#if MYGUI_VERSION < MYGUI_DEFINE_VERSION(3,2,3)
-    styleFocusedButton(mCurrentFocus);
-#endif
 }
 
 void KeyboardNavigation::setDefaultFocus(MyGUI::Widget *window, MyGUI::Widget *defaultFocus)
@@ -292,7 +246,7 @@ bool KeyboardNavigation::switchFocus(int direction, bool wrap)
     if (wrap)
         index = (index + keyFocusList.size())%keyFocusList.size();
     else
-        index = std::min(std::max(0, index), static_cast<int>(keyFocusList.size())-1);
+        index = std::clamp<int>(index, 0, keyFocusList.size() - 1);
 
     MyGUI::Widget* next = keyFocusList[index];
     int vertdiff = next->getTop() - focus->getTop();

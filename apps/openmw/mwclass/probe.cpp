@@ -1,6 +1,6 @@
 #include "probe.hpp"
 
-#include <components/esm/loadprob.hpp>
+#include <components/esm3/loadprob.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -26,11 +26,6 @@ namespace MWClass
         if (!model.empty()) {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
-    }
-
-    void Probe::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
-    {
-        // TODO: add option somewhere to enable collision for placeable objects
     }
 
     std::string Probe::getModel(const MWWorld::ConstPtr &ptr) const
@@ -85,7 +80,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Probe);
 
-        registerClass (typeid (ESM::Probe).name(), instance);
+        registerClass (ESM::Probe::sRecordId, instance);
     }
 
     std::string Probe::getUpSoundId (const MWWorld::ConstPtr& ptr) const

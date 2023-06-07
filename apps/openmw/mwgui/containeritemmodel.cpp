@@ -2,19 +2,6 @@
 
 #include <algorithm>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/actorutil.hpp"
 
@@ -99,7 +86,7 @@ size_t ContainerItemModel::getItemCount()
     return mItems.size();
 }
 
-ItemModel::ModelIndex ContainerItemModel::getIndex (ItemStack item)
+ItemModel::ModelIndex ContainerItemModel::getIndex (const ItemStack& item)
 {
     size_t i = 0;
     for (ItemStack& itemStack : mItems)
@@ -117,37 +104,7 @@ MWWorld::Ptr ContainerItemModel::copyItem (const ItemStack& item, size_t count, 
     MWWorld::ContainerStore& store = source.first.getClass().getContainerStore(source.first);
     if (item.mBase.getContainerStore() == &store)
         throw std::runtime_error("Item to copy needs to be from a different container!");
-
-    /*
-        Start of tes3mp addition
-
-        Send an ID_CONTAINER packet every time an item is added to a container here
-    */
-    mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-    objectList->reset();
-    objectList->packetOrigin = mwmp::PACKET_ORIGIN::CLIENT_GAMEPLAY;
-    objectList->cell = *source.first.getCell()->getCell();
-    objectList->action = mwmp::BaseObjectList::ADD;
-    objectList->containerSubAction = mwmp::BaseObjectList::NONE;
-    mwmp::BaseObject baseObject = objectList->getBaseObjectFromPtr(source.first);
-    objectList->addContainerItem(baseObject, item.mBase, count, 0);
-    objectList->addBaseObject(baseObject);
-    objectList->sendContainer();
-    /*
-        End of tes3mp addition
-    */
-
-    /*
-        Start of tes3mp change (major)
-
-        Instead of unilaterally adding the item to this source's ContainerStore on this
-        client and returning the resulting Ptr, rely on the server to handle the item
-        transfer and just return the original item Ptr as a placeholder return value
-    */
-    return item.mBase;
-    /*
-        End of tes3mp change (major)
-    */
+    return *store.add(item.mBase, count, source.first, allowAutoEquip);
 }
 
 void ContainerItemModel::removeItem (const ItemStack& item, size_t count)
@@ -162,45 +119,12 @@ void ContainerItemModel::removeItem (const ItemStack& item, size_t count)
         {
             if (stacks(*it, item.mBase))
             {
-                /*
-                    Start of tes3mp change (major)
-
-                    Send an ID_CONTAINER packet every time an item is removed here and prevent any
-                    unilateral item removal on this client, as long as this isn't the player's
-                    currently open container and doesn't require the drag and drop logic dealt with
-                    in MWGui::ContainerWindow instead
-                */
-                mwmp::CurrentContainer *currentContainer = &mwmp::Main::get().getLocalPlayer()->currentContainer;
-
-                if (currentContainer->refNum != source.first.getCellRef().getRefNum().mIndex ||
-                    currentContainer->mpNum != source.first.getCellRef().getMpNum())
-                {
-                    mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                    objectList->reset();
-                    objectList->packetOrigin = mwmp::PACKET_ORIGIN::CLIENT_GAMEPLAY;
-                    objectList->cell = *source.first.getCell()->getCell();
-                    objectList->action = mwmp::BaseObjectList::REMOVE;
-                    objectList->containerSubAction = mwmp::BaseObjectList::NONE;
-                    mwmp::BaseObject baseObject = objectList->getBaseObjectFromPtr(source.first);
-                    objectList->addContainerItem(baseObject, *it, it->getRefData().getCount(), toRemove);
-                    objectList->addBaseObject(baseObject);
-                    objectList->sendContainer();
-                    
-                    toRemove -= it->getRefData().getCount();
-                }
+                int quantity = it->mRef->mData.getCount(false);
+                // If this is a restocking quantity, just don't remove it
+                if(quantity < 0 && mTrading)
+                    toRemove += quantity;
                 else
-                {
-                    int quantity = it->mRef->mData.getCount(false);
-                    // If this is a restocking quantity, just don't remove it
-                    if (quantity < 0 && mTrading)
-                        toRemove += quantity;
-                    else
-                        toRemove -= store.remove(*it, toRemove, source.first);
-                }
-                /*
-                    End of tes3mp change (major)
-                */
-
+                    toRemove -= store.remove(*it, toRemove, source.first);
                 if (toRemove <= 0)
                     return;
             }
@@ -212,24 +136,7 @@ void ContainerItemModel::removeItem (const ItemStack& item, size_t count)
         {
             int refCount = source.getRefData().getCount();
             if (refCount - toRemove <= 0)
-            {
-                /*
-                    Start of tes3mp addition
-
-                    Send an ID_OBJECT_DELETE packet every time an item is removed from the world
-                    because it has been purchased from its owner
-                */
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectGeneric(source);
-                objectList->sendObjectDelete();
-                /*
-                    End of tes3mp addition
-                */
-
                 MWBase::Environment::get().getWorld()->deleteObject(source);
-            }
             else
                 source.getRefData().setCount(std::max(0, refCount - toRemove));
             toRemove -= refCount;
@@ -302,7 +209,7 @@ bool ContainerItemModel::onDropItem(const MWWorld::Ptr &item, int count)
 
     MWWorld::Ptr target = mItemSources[0].first;
 
-    if (target.getTypeName() != typeid(ESM::Container).name())
+    if (target.getType() != ESM::Container::sRecordId)
         return true;
 
     // check container organic flag
@@ -340,6 +247,16 @@ bool ContainerItemModel::onTakeItem(const MWWorld::Ptr &item, int count)
     MWBase::Environment::get().getMechanicsManager()->itemTaken(player, item, target, count);
 
     return true;
+}
+
+bool ContainerItemModel::usesContainer(const MWWorld::Ptr& container)
+{
+    for(const auto& source : mItemSources)
+    {
+        if(source.first == container)
+            return true;
+    }
+    return false;
 }
 
 }

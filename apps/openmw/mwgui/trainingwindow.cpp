@@ -2,18 +2,6 @@
 
 #include <MyGUI_Gui.h>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -183,36 +171,11 @@ namespace MWGui
 
         // add gold to NPC trading gold pool
         MWMechanics::NpcStats& npcStats = mPtr.getClass().getNpcStats(mPtr);
-
-        /*
-            Start of tes3mp change (major)
-
-            Don't unilaterally change the merchant's gold pool on our client and instead let the server do it
-        */
-        //npcStats.setGoldPool(npcStats.getGoldPool() + price);
-
-        mwmp::ObjectList* objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectMiscellaneous(mPtr, npcStats.getGoldPool() + price, npcStats.getLastRestockTime().getHour(),
-            npcStats.getLastRestockTime().getDay());
-        objectList->sendObjectMiscellaneous();
-        /*
-            End of tes3mp change (major)
-        */
+        npcStats.setGoldPool(npcStats.getGoldPool() + price);
 
         // advance time
         MWBase::Environment::get().getMechanicsManager()->rest(2, false);
-
-        /*
-            Start of tes3mp change (major)
-
-            Multiplayer requires that time not get advanced here
-        */
-        //MWBase::Environment::get().getWorld ()->advanceTime (2);
-        /*
-            End of tes3mp change (major)
-        */
+        MWBase::Environment::get().getWorld ()->advanceTime (2);
 
         setVisible(false);
         mProgressBar.setVisible(true);

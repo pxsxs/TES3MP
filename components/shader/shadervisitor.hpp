@@ -2,6 +2,8 @@
 #define OPENMW_COMPONENTS_SHADERVISITOR_H
 
 #include <osg/NodeVisitor>
+#include <osg/Program>
+#include <osg/Texture2D>
 
 namespace Resource
 {
@@ -18,6 +20,8 @@ namespace Shader
     {
     public:
         ShaderVisitor(ShaderManager& shaderManager, Resource::ImageManager& imageManager, const std::string& defaultShaderPrefix);
+
+        void setProgramTemplate(const osg::Program* programTemplate) { mProgramTemplate = programTemplate; }
 
         /// By default, only bump mapped objects will have a shader added to them.
         /// Setting force = true will cause all objects to render using shaders, regardless of having a bump map.
@@ -42,7 +46,7 @@ namespace Shader
 
         void setConvertAlphaTestToAlphaToCoverage(bool convert);
 
-        void setTranslucentFramebuffer(bool translucent);
+        void setOpaqueDepthTex(osg::ref_ptr<osg::Texture2D> texture);
 
         void apply(osg::Node& node) override;
 
@@ -69,15 +73,13 @@ namespace Shader
 
         bool mConvertAlphaTestToAlphaToCoverage;
 
-        bool mTranslucentFramebuffer;
-
         ShaderManager& mShaderManager;
         Resource::ImageManager& mImageManager;
 
         struct ShaderRequirements
         {
             ShaderRequirements();
-            ~ShaderRequirements();
+            ~ShaderRequirements() = default;
 
             // <texture stage, texture name>
             std::map<int, std::string> mTextures;
@@ -99,6 +101,9 @@ namespace Shader
             // -1 == no tangents required
             int mTexStageRequiringTangents;
 
+            bool mSoftParticles;
+            float mSoftParticleSize;
+
             // the Node that requested these requirements
             osg::Node* mNode;
         };
@@ -109,6 +114,9 @@ namespace Shader
         void createProgram(const ShaderRequirements& reqs);
         void ensureFFP(osg::Node& node);
         bool adjustGeometry(osg::Geometry& sourceGeometry, const ShaderRequirements& reqs);
+
+        osg::ref_ptr<const osg::Program> mProgramTemplate;
+        osg::ref_ptr<osg::Texture2D> mOpaqueDepthTex;
     };
 
     class ReinstateRemovedStateVisitor : public osg::NodeVisitor

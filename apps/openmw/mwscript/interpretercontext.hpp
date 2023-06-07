@@ -47,36 +47,7 @@ namespace MWScript
             InterpreterContext (MWScript::Locals *locals, const MWWorld::Ptr& reference);
             ///< The ownership of \a locals is not transferred. 0-pointer allowed.
 
-            /*
-                Start of tes3mp addition
-
-                Useful boolean for setting whether scripts send packets, set to false by default
-                to avoid massive packet spam
-            */
-            bool sendPackets = false;
-            /*
-                End of tes3mp addition
-            */
-
-            /*
-                Start of tes3mp addition
-
-                Used for tracking and checking the type of this InterpreterContext, as well as
-                its current script
-            */
-            unsigned short mContextType;
-            std::string mCurrentScriptName = "";
-
-            virtual unsigned short getContextType() const;
-
-            virtual std::string getCurrentScriptName() const;
-
-            virtual void trackContextType(unsigned short contextType);
-
-            virtual void trackCurrentScriptName(const std::string& name);
-            /*
-                End of tes3mp addition
-            */
+            std::string getTarget() const override;
 
             int getLocalShort (int index) const override;
 
@@ -140,7 +111,7 @@ namespace MWScript
 
             std::string getCurrentCellName() const override;
 
-            void executeActivation(MWWorld::Ptr ptr, MWWorld::Ptr actor);
+            void executeActivation(const MWWorld::Ptr& ptr, const MWWorld::Ptr& actor);
             ///< Execute the activation action for this ptr. If ptr is mActivated, mark activation as handled.
 
             int getMemberShort (const std::string& id, const std::string& name, bool global) const override;
@@ -155,7 +126,7 @@ namespace MWScript
 
             void setMemberFloat (const std::string& id, const std::string& name, float value, bool global) override;
 
-            MWWorld::Ptr getReference(bool required=true);
+            MWWorld::Ptr getReference(bool required=true) const;
             ///< Reference, that the script is running from (can be empty)
 
             void updatePtr(const MWWorld::Ptr& base, const MWWorld::Ptr& updated);

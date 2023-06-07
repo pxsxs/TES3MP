@@ -1,22 +1,10 @@
 #include "merchantrepair.hpp"
 
-#include <components/esm/loadgmst.hpp>
+#include <components/esm3/loadgmst.hpp>
 
 #include <MyGUI_Button.h>
 #include <MyGUI_ScrollView.h>
 #include <MyGUI_Gui.h>
-
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
 
 #include "../mwbase/world.hpp"
 #include "../mwbase/environment.hpp"
@@ -148,23 +136,7 @@ void MerchantRepair::onRepairButtonClick(MyGUI::Widget *sender)
 
     // add gold to NPC trading gold pool
     MWMechanics::CreatureStats& actorStats = mActor.getClass().getCreatureStats(mActor);
-
-    /*
-        Start of tes3mp change (major)
-
-        Don't unilaterally change the merchant's gold pool on our client and instead let the server do it
-    */
-    //actorStats.setGoldPool(actorStats.getGoldPool() + price);
-
-    mwmp::ObjectList* objectList = mwmp::Main::get().getNetworking()->getObjectList();
-    objectList->reset();
-    objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-    objectList->addObjectMiscellaneous(mActor, actorStats.getGoldPool() + price, actorStats.getLastRestockTime().getHour(),
-        actorStats.getLastRestockTime().getDay());
-    objectList->sendObjectMiscellaneous();
-    /*
-        End of tes3mp change (major)
-    */
+    actorStats.setGoldPool(actorStats.getGoldPool() + price);
 
     setPtr(mActor);
 }

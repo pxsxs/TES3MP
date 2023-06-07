@@ -4,20 +4,17 @@
 #include <MyGUI_Timer.h>
 
 #include <osg/Drawable>
-#include <osg/BlendFunc>
 #include <osg/Texture2D>
 #include <osg/TexMat>
-#include <osg/ValueObject>
 
 #include <osgViewer/Viewer>
 
 #include <osgGA/GUIEventHandler>
 
 #include <components/resource/imagemanager.hpp>
+#include <components/shader/shadermanager.hpp>
+#include <components/sceneutil/nodecallback.hpp>
 
-#include <components/debug/debuglog.hpp>
-
-#include "myguicompat.h"
 #include "myguitexture.hpp"
 
 #define MYGUI_PLATFORM_LOG_SECTION "Platform"
@@ -50,7 +47,7 @@ class Drawable : public osg::Drawable {
 public:
 
     // Stage 0: update widget animations and controllers. Run during the Update traversal.
-    class FrameUpdate : public osg::Drawable::UpdateCallback
+    class FrameUpdate : public SceneUtil::NodeCallback<FrameUpdate>
     {
     public:
         FrameUpdate()
@@ -63,10 +60,9 @@ public:
             mRenderManager = renderManager;
         }
 
-        void update(osg::NodeVisitor*, osg::Drawable*) override
+        void operator()(osg::Node*, osg::NodeVisitor*)
         {
-            if (mRenderManager)
-                mRenderManager->update();
+            mRenderManager->update();
         }
 
     private:
@@ -74,7 +70,7 @@ public:
     };
 
     // Stage 1: collect draw calls. Run during the Cull traversal.
-    class CollectDrawCalls : public osg::Drawable::CullCallback
+    class CollectDrawCalls : public SceneUtil::NodeCallback<CollectDrawCalls>
     {
     public:
         CollectDrawCalls()
@@ -87,13 +83,9 @@ public:
             mRenderManager = renderManager;
         }
 
-        bool cull(osg::NodeVisitor*, osg::Drawable*, osg::State*) const override
+        void operator()(osg::Node*, osg::NodeVisitor*)
         {
-            if (!mRenderManager)
-                return false;
-
             mRenderManager->collectDrawCalls();
-            return false;
         }
 
     private:
@@ -127,9 +119,13 @@ public:
                 state->apply();
             }
 
+            // A GUI element without an associated texture would be extremely rare.
+            // It is worth it to use a dummy 1x1 black texture sampler instead of either adding a conditional or relinking shaders.
             osg::Texture2D* texture = batch.mTexture;
             if(texture)
                 state->applyTextureAttribute(0, texture);
+            else
+                state->applyTextureAttribute(0, mDummyTexture);
 
             osg::GLBufferObject* bufferobject = state->isVertexBufferObjectSupported() ? vbo->getOrCreateGLBufferObject(state->getContextID()) : nullptr;
             if (bufferobject)
@@ -189,6 +185,10 @@ public:
         mStateSet->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
         mStateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
 
+        mDummyTexture = new osg::Texture2D;
+        mDummyTexture->setInternalFormat(GL_RGB);
+        mDummyTexture->setTextureSize(1,1);
+
         // need to flip tex coords since MyGUI uses DirectX convention of top left image origin
         osg::Matrix flipMat;
         flipMat.preMultTranslate(osg::Vec3f(0,1,0));
@@ -201,6 +201,7 @@ public:
         , mStateSet(copy.mStateSet)
         , mWriteTo(0)
         , mReadFrom(0)
+        , mDummyTexture(copy.mDummyTexture)
     {
     }
 
@@ -231,6 +232,11 @@ public:
         mBatchVector[mWriteTo].clear();
     }
 
+    osg::StateSet* getDrawableStateSet()
+    {
+        return mStateSet;
+    }
+
     META_Object(osgMyGUI, Drawable)
 
 private:
@@ -242,6 +248,8 @@ private:
 
     int mWriteTo;
     mutable int mReadFrom;
+
+    osg::ref_ptr<osg::Texture2D> mDummyTexture;
 };
 
 class OSGVertexBuffer : public MyGUI::IVertexBuffer
@@ -267,7 +275,7 @@ public:
     osg::VertexBufferObject* getVertexBuffer();
 
     void setVertexCount(size_t count) override;
-    size_t getVertexCount() OPENMW_MYGUI_CONST_GETTER_3_4_1 override;
+    size_t getVertexCount() const override;
 
     MyGUI::Vertex *lock() override;
     void unlock() override;
@@ -294,7 +302,7 @@ void OSGVertexBuffer::setVertexCount(size_t count)
     mNeedVertexCount = count;
 }
 
-size_t OSGVertexBuffer::getVertexCount() OPENMW_MYGUI_CONST_GETTER_3_4_1
+size_t OSGVertexBuffer::getVertexCount() const
 {
     return mNeedVertexCount;
 }
@@ -417,6 +425,16 @@ void RenderManager::shutdown()
     mSceneRoot->removeChild(mGuiRoot);
 }
 
+void RenderManager::enableShaders(Shader::ShaderManager& shaderManager)
+{
+    auto vertexShader = shaderManager.getShader("gui_vertex.glsl", {}, osg::Shader::VERTEX);
+    auto fragmentShader = shaderManager.getShader("gui_fragment.glsl", {}, osg::Shader::FRAGMENT);
+    auto program = shaderManager.getProgram(vertexShader, fragmentShader);
+
+    mDrawable->getDrawableStateSet()->setAttributeAndModes(program, osg::StateAttribute::ON);
+    mDrawable->getDrawableStateSet()->addUniform(new osg::Uniform("diffuseMap", 0));
+}
+
 MyGUI::IVertexBuffer* RenderManager::createVertexBuffer()
 {
     return new OSGVertexBuffer();
@@ -442,23 +460,17 @@ void RenderManager::doRender(MyGUI::IVertexBuffer *buffer, MyGUI::ITexture *text
     batch.mVertexBuffer = static_cast<OSGVertexBuffer*>(buffer)->getVertexBuffer();
     batch.mArray = static_cast<OSGVertexBuffer*>(buffer)->getVertexArray();
     static_cast<OSGVertexBuffer*>(buffer)->markUsed();
-    bool premultipliedAlpha = false;
-    if (texture)
+
+    if (OSGTexture* osgtexture = static_cast<OSGTexture*>(texture))
     {
-        batch.mTexture = static_cast<OSGTexture*>(texture)->getTexture();
+        batch.mTexture = osgtexture->getTexture();
         if (batch.mTexture->getDataVariance() == osg::Object::DYNAMIC)
             mDrawable->setDataVariance(osg::Object::DYNAMIC); // only for this frame, reset in begin()
-        batch.mTexture->getUserValue("premultiplied alpha", premultipliedAlpha);
+        if (!mInjectState && osgtexture->getInjectState())
+            batch.mStateSet = osgtexture->getInjectState();
     }
     if (mInjectState)
         batch.mStateSet = mInjectState;
-    else if (premultipliedAlpha)
-    {
-        // This is hacky, but MyGUI made it impossible to use a custom layer for a nested node, so state couldn't be injected 'properly'
-        osg::ref_ptr<osg::StateSet> stateSet = new osg::StateSet();
-        stateSet->setAttribute(new osg::BlendFunc(osg::BlendFunc::ONE, osg::BlendFunc::ONE_MINUS_SRC_ALPHA));
-        batch.mStateSet = stateSet;
-    }
 
     mDrawable->addBatch(batch);
 }
@@ -573,7 +585,6 @@ bool RenderManager::checkTexture(MyGUI::ITexture* _texture)
     return true;
 }
 
-#if MYGUI_VERSION > MYGUI_DEFINE_VERSION(3, 4, 0)
 void RenderManager::registerShader(
     const std::string& _shaderName,
     const std::string& _vertexProgramFile,
@@ -581,6 +592,5 @@ void RenderManager::registerShader(
 {
     MYGUI_PLATFORM_LOG(Warning, "osgMyGUI::RenderManager::registerShader is not implemented");
 }
-#endif
 
 }

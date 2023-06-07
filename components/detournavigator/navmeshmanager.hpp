@@ -6,6 +6,7 @@
 #include "offmeshconnectionsmanager.hpp"
 #include "recastmeshtiles.hpp"
 #include "waitconditiontype.hpp"
+#include "heightfieldshape.hpp"
 
 #include <BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h>
 
@@ -21,7 +22,9 @@ namespace DetourNavigator
     class NavMeshManager
     {
     public:
-        NavMeshManager(const Settings& settings);
+        explicit NavMeshManager(const Settings& settings, std::unique_ptr<NavMeshDb>&& db);
+
+        void setWorldspace(std::string_view worldspace);
 
         bool addObject(const ObjectId id, const CollisionShape& shape, const btTransform& transform,
                        const AreaType areaType);
@@ -33,9 +36,13 @@ namespace DetourNavigator
 
         void addAgent(const osg::Vec3f& agentHalfExtents);
 
-        bool addWater(const osg::Vec2i& cellPosition, const int cellSize, const btTransform& transform);
+        bool addWater(const osg::Vec2i& cellPosition, int cellSize, float level);
 
         bool removeWater(const osg::Vec2i& cellPosition);
+
+        bool addHeightfield(const osg::Vec2i& cellPosition, int cellSize, const HeightfieldShape& shape);
+
+        bool removeHeightfield(const osg::Vec2i& cellPosition);
 
         bool reset(const osg::Vec3f& agentHalfExtents);
 
@@ -43,7 +50,7 @@ namespace DetourNavigator
 
         void removeOffMeshConnections(const ObjectId id);
 
-        void update(osg::Vec3f playerPosition, const osg::Vec3f& agentHalfExtents);
+        void update(const osg::Vec3f& playerPosition, const osg::Vec3f& agentHalfExtents);
 
         void wait(Loading::Listener& listener, WaitConditionType waitConditionType);
 
@@ -53,10 +60,11 @@ namespace DetourNavigator
 
         void reportStats(unsigned int frameNumber, osg::Stats& stats) const;
 
-        RecastMeshTiles getRecastMeshTiles();
+        RecastMeshTiles getRecastMeshTiles() const;
 
     private:
         const Settings& mSettings;
+        std::string mWorldspace;
         TileCachedRecastMeshManager mRecastMeshManager;
         OffMeshConnectionsManager mOffMeshConnectionsManager;
         AsyncNavMeshUpdater mAsyncNavMeshUpdater;
@@ -68,7 +76,7 @@ namespace DetourNavigator
 
         void addChangedTiles(const btCollisionShape& shape, const btTransform& transform, const ChangeType changeType);
 
-        void addChangedTiles(const int cellSize, const btTransform& transform, const ChangeType changeType);
+        void addChangedTiles(const int cellSize, const btVector3& shift, const ChangeType changeType);
 
         void addChangedTile(const TilePosition& tilePosition, const ChangeType changeType);
 

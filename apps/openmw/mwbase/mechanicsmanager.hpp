@@ -5,7 +5,7 @@
 #include <vector>
 #include <list>
 #include <set>
-#include <stdint.h>
+#include <cstdint>
 
 #include "../mwmechanics/actorutil.hpp"
 // For MWMechanics::GreetingState
@@ -58,7 +58,7 @@ namespace MWBase
             virtual void add (const MWWorld::Ptr& ptr) = 0;
             ///< Register an object for management
 
-            virtual void remove (const MWWorld::Ptr& ptr) = 0;
+            virtual void remove (const MWWorld::Ptr& ptr, bool keepActive) = 0;
             ///< Deregister an object for management
 
             virtual void updateCell(const MWWorld::Ptr &old, const MWWorld::Ptr &ptr) = 0;
@@ -88,7 +88,7 @@ namespace MWBase
             virtual void setPlayerClass (const ESM::Class& class_) = 0;
             ///< Set player class to custom class.
 
-            virtual void restoreDynamicStats(MWWorld::Ptr actor, double hours, bool sleep) = 0;
+            virtual void restoreDynamicStats(const MWWorld::Ptr& actor, double hours, bool sleep) = 0;
 
             virtual void rest(double hours, bool sleep) = 0;
             ///< If the player is sleeping or waiting, this should be called every hour.
@@ -100,27 +100,20 @@ namespace MWBase
             virtual int getBarterOffer(const MWWorld::Ptr& ptr,int basePrice, bool buying) = 0;
             ///< This is used by every service to determine the price of objects given the trading skills of the player and NPC.
 
-            virtual int getDerivedDisposition(const MWWorld::Ptr& ptr, bool addTemporaryDispositionChange = true) = 0;
+            virtual int getDerivedDisposition(const MWWorld::Ptr& ptr, bool clamp = true) = 0;
             ///< Calculate the diposition of an NPC toward the player.
 
             virtual int countDeaths (const std::string& id) const = 0;
             ///< Return the number of deaths for actors with the given ID.
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the number of deaths for an actor with the given refId
-            */
-            virtual void setDeaths(const std::string& refId, int number) = 0;
-            /*
-                End of tes3mp addition
-            */
 
             /// Check if \a observer is potentially aware of \a ptr. Does not do a line of sight check!
             virtual bool awarenessCheck (const MWWorld::Ptr& ptr, const MWWorld::Ptr& observer) = 0;
 
             /// Makes \a ptr fight \a target. Also shouts a combat taunt.
             virtual void startCombat (const MWWorld::Ptr& ptr, const MWWorld::Ptr& target) = 0;
+
+            /// Removes an actor and its allies from combat with the actor's targets.
+            virtual void stopCombat(const MWWorld::Ptr& ptr) = 0;
 
             enum OffenseType
             {
@@ -166,7 +159,7 @@ namespace MWBase
                 PT_Bribe100,
                 PT_Bribe1000
             };
-            virtual void getPersuasionDispositionChange (const MWWorld::Ptr& npc, PersuasionType type, bool& success, float& tempChange, float& permChange) = 0;
+            virtual void getPersuasionDispositionChange (const MWWorld::Ptr& npc, PersuasionType type, bool& success, int& tempChange, int& permChange) = 0;
             ///< Perform a persuasion action on NPC
 
             virtual void forceStateUpdate(const MWWorld::Ptr &ptr) = 0;
@@ -240,17 +233,7 @@ namespace MWBase
             virtual bool isReadyToBlock (const MWWorld::Ptr& ptr) const = 0;
             virtual bool isAttackingOrSpell(const MWWorld::Ptr &ptr) const = 0;
 
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the attackingOrSpell state from elsewhere in the code
-            */
-            virtual void setAttackingOrSpell(const MWWorld::Ptr &ptr, bool state) const = 0;
-            /*
-                End of tes3mp addition
-            */
-
-            virtual void castSpell(const MWWorld::Ptr& ptr, const std::string spellId, bool manualSpell) = 0;
+            virtual void castSpell(const MWWorld::Ptr& ptr, const std::string& spellId, bool manualSpell) = 0;
 
             virtual void processChangedSettings (const std::set< std::pair<std::string, std::string> >& settings) = 0;
 
@@ -275,17 +258,6 @@ namespace MWBase
             virtual bool isItemStolenFrom(const std::string& itemid, const MWWorld::Ptr& ptr) = 0;
 
             virtual bool isBoundItem(const MWWorld::Ptr& item) = 0;
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check if an itemId corresponds to a bound item
-            */
-            virtual bool isBoundItem(std::string itemId) = 0;
-            /*
-                End of tes3mp addition
-            */
-
             virtual bool isAllowedToUse (const MWWorld::Ptr& ptr, const MWWorld::Ptr& target, MWWorld::Ptr& victim) = 0;
 
             /// Turn actor into werewolf or normal form.
@@ -308,8 +280,6 @@ namespace MWBase
             virtual float getAngleToPlayer(const MWWorld::Ptr& ptr) const  = 0;
             virtual MWMechanics::GreetingState getGreetingState(const MWWorld::Ptr& ptr) const = 0;
             virtual bool isTurningToPlayer(const MWWorld::Ptr& ptr) const = 0;
-
-            virtual void restoreStatsAfterCorprus(const MWWorld::Ptr& actor, const std::string& sourceId) = 0;
     };
 }
 

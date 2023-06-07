@@ -3,27 +3,12 @@
 #include <components/misc/rng.hpp>
 #include <components/misc/coordinateconverter.hpp>
 
-#include <components/esm/aisequence.hpp>
+#include <components/esm3/aisequence.hpp>
 
 #include <components/misc/mathutil.hpp>
 
 #include <components/sceneutil/positionattitudetransform.hpp>
-#include <components/detournavigator/navigator.hpp>
-
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ActorList.hpp"
-#include "../mwmp/MechanicsHelper.hpp"
-#include "../mwgui/windowmanagerimp.hpp"
-/*
-    End of tes3mp addition
-*/
+#include <components/detournavigator/navigatorutils.hpp>
 
 #include "../mwphysics/collisiontype.hpp"
 
@@ -152,25 +137,11 @@ namespace MWMechanics
             }
 
             storage.updateCombatMove(duration);
+            storage.mRotateMove = false;
             if (storage.mReadyToAttack) updateActorsMovement(actor, duration, storage);
-            storage.updateAttack(characterController);
-
-            /*
-                Start of tes3mp addition
-
-                Record that this actor is updating an attack so that a packet will be sent about it
-            */
-            mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(actor);
-
-            if (localAttack && localAttack->pressed != storage.mAttack)
-            {
-                MechanicsHelper::resetAttack(localAttack);
-                localAttack->pressed = storage.mAttack;
-                localAttack->shouldSend = true;
-            }
-            /*
-                End of tes3mp addition
-            */
+            if (storage.mRotateMove)
+                return false;
+            storage.updateAttack(actor, characterController);
         }
         else
         {
@@ -193,47 +164,11 @@ namespace MWMechanics
             currentCell = actor.getCell();
         }
 
-        /*
-            Start of tes3mp addition
-
-            Because multiplayer doesn't pause the world during dialogue, disallow attacks on
-            a player engaged in dialogue
-        */
-        if (target == MWBase::Environment::get().getWorld()->getPlayerPtr())
-        {
-            if (MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_Dialogue))
-            {
-                storage.stopAttack();
-                return false;
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
-
         bool forceFlee = false;
         if (!canFight(actor, target))
         {
             storage.stopAttack();
-            characterController.setAttackingOrSpell(false);
-
-            /*
-                Start of tes3mp addition
-
-                Record that this actor is stopping an attack so that a packet will be sent about it
-            */
-            mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(actor);
-
-            if (localAttack && localAttack->pressed != false)
-            {
-                MechanicsHelper::resetAttack(localAttack);
-                localAttack->pressed = false;
-                localAttack->shouldSend = true;
-            }
-            /*
-                End of tes3mp addition
-            */
-
+            actor.getClass().getCreatureStats(actor).setAttackingOrSpell(false);
             storage.mActionCooldown = 0.f;
             // Continue combat if target is player or player follower/escorter and an attack has been attempted
             const std::list<MWWorld::Ptr>& playerFollowersAndEscorters = MWBase::Environment::get().getMechanicsManager()->getActorsSidingWith(MWMechanics::getPlayer());
@@ -337,19 +272,21 @@ namespace MWMechanics
             const auto navigatorFlags = getNavigatorFlags(actor);
             const auto areaCosts = getAreaCosts(actor);
             const auto pathGridGraph = getPathGridGraph(actor.getCell());
-            mPathFinder.buildPath(actor, vActorPos, vTargetPos, actor.getCell(), pathGridGraph, halfExtents, navigatorFlags, areaCosts);
+            mPathFinder.buildPath(actor, vActorPos, vTargetPos, actor.getCell(), pathGridGraph, halfExtents,
+                                  navigatorFlags, areaCosts, storage.mAttackRange, PathType::Full);
 
             if (!mPathFinder.isPathConstructed())
             {
                 // If there is no path, try to find a point on a line from the actor position to target projected
                 // on navmesh to attack the target from there.
                 const auto navigator = world->getNavigator();
-                const auto hit = navigator->raycast(halfExtents, vActorPos, vTargetPos, navigatorFlags);
+                const auto hit = DetourNavigator::raycast(*navigator, halfExtents, vActorPos, vTargetPos, navigatorFlags);
 
                 if (hit.has_value() && (*hit - vTargetPos).length() <= rangeAttack)
                 {
                     // If the point is close enough, try to find a path to that point.
-                    mPathFinder.buildPath(actor, vActorPos, *hit, actor.getCell(), pathGridGraph, halfExtents, navigatorFlags, areaCosts);
+                    mPathFinder.buildPath(actor, vActorPos, *hit, actor.getCell(), pathGridGraph, halfExtents,
+                                          navigatorFlags, areaCosts, storage.mAttackRange, PathType::Full);
                     if (mPathFinder.isPathConstructed())
                     {
                         // If path to that point is found use it as custom destination.
@@ -362,7 +299,7 @@ namespace MWMechanics
                 {
                     storage.mUseCustomDestination = false;
                     storage.stopAttack();
-                    characterController.setAttackingOrSpell(false);
+                    actor.getClass().getCreatureStats(actor).setAttackingOrSpell(false);
                     currentAction.reset(new ActionFlee());
                     actionCooldown = currentAction->getActionCooldown();
                     storage.startFleeing();
@@ -508,7 +445,7 @@ namespace MWMechanics
         storage.mCurrentAction->getCombatRange(isRangedCombat);
         float eps = isRangedCombat ? osg::DegreesToRadians(0.5) : osg::DegreesToRadians(3.f);
         float targetAngleRadians = storage.mMovement.mRotation[axis];
-        smoothTurn(actor, targetAngleRadians, axis, eps);
+        storage.mRotateMove = !smoothTurn(actor, targetAngleRadians, axis, eps);
     }
 
     MWWorld::Ptr AiCombat::getTarget() const
@@ -638,34 +575,10 @@ namespace MWMechanics
             if (mAttackCooldown <= 0)
             {
                 mAttack = true; // attack starts just now
-                characterController.setAttackingOrSpell(true);
+                actor.getClass().getCreatureStats(actor).setAttackingOrSpell(true);
 
                 if (!distantCombat)
                     characterController.setAIAttackType(chooseBestAttack(weapon));
-
-                /*
-                    Start of tes3mp addition
-
-                    Record that this actor is starting an attack so that a packet will be sent about it
-                */
-                mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(actor);
-
-                if (localAttack && localAttack->pressed != true)
-                {
-                    MechanicsHelper::resetAttack(localAttack);
-                    localAttack->type = distantCombat ? mwmp::Attack::RANGED : mwmp::Attack::MELEE;
-                    localAttack->attackAnimation = characterController.getAttackType();
-                    localAttack->pressed = true;
-
-                    mwmp::ActorList *actorList = mwmp::Main::get().getNetworking()->getActorList();
-                    actorList->reset();
-                    actorList->cell = *actor.getCell()->getCell();
-                    actorList->addAttackActor(actor, *localAttack);
-                    actorList->sendAttackActors();
-                }
-                /*
-                    End of tes3mp addition
-                */
 
                 mStrength = Misc::Rng::rollClosedProbability();
 
@@ -690,13 +603,13 @@ namespace MWMechanics
         }
     }
 
-    void AiCombatStorage::updateAttack(CharacterController& characterController)
+    void AiCombatStorage::updateAttack(const MWWorld::Ptr& actor, CharacterController& characterController)
     {
         if (mAttack && (characterController.getAttackStrength() >= mStrength || characterController.readyToPrepareAttack()))
         {
             mAttack = false;
         }
-        characterController.setAttackingOrSpell(mAttack);
+        actor.getClass().getCreatureStats(actor).setAttackingOrSpell(mAttack);
     }
 
     void AiCombatStorage::stopAttack()

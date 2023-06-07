@@ -4,7 +4,7 @@
 #include <osg/Group>
 #include <osg/ComputeBoundsVisitor>
 
-#include <components/esm/loadligh.hpp>
+#include <components/esm3/loadligh.hpp>
 #include <components/fallback/fallback.hpp>
 
 #include "lightmanager.hpp"
@@ -79,6 +79,7 @@ namespace SceneUtil
             // PositionAttitudeTransform seems to be slightly faster than MatrixTransform
             osg::ref_ptr<SceneUtil::PositionAttitudeTransform> trans(new SceneUtil::PositionAttitudeTransform);
             trans->setPosition(computeBound.getBoundingBox().center());
+            trans->setNodeMask(lightMask);
 
             node->addChild(trans);
 

@@ -1,7 +1,6 @@
 #ifndef OPENMW_MWPHYSICS_ACTOR_H
 #define OPENMW_MWPHYSICS_ACTOR_H
 
-#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -13,6 +12,7 @@
 
 class btCollisionShape;
 class btCollisionObject;
+class btCollisionWorld;
 class btConvexShape;
 
 namespace Resource
@@ -37,7 +37,7 @@ namespace MWPhysics
 
         bool getCollisionMode() const
         {
-            return mInternalCollisionMode.load(std::memory_order_acquire);
+            return mInternalCollisionMode;
         }
 
         btConvexShape* getConvexShape() const { return mConvexShape; }
@@ -48,7 +48,7 @@ namespace MWPhysics
         void enableCollisionBody(bool collision);
 
         void updateScale();
-        void updateRotation();
+        void setRotation(osg::Quat quat);
 
         /**
          * Return true if the collision shape looks the same no matter how its Z rotated.
@@ -60,7 +60,6 @@ namespace MWPhysics
         * to account for e.g. scripted movements
         */
         void setSimulationPosition(const osg::Vec3f& position);
-        osg::Vec3f getSimulationPosition() const;
 
         void updateCollisionObjectPosition();
 
@@ -90,14 +89,10 @@ namespace MWPhysics
         void updatePosition();
 
         // register a position offset that will be applied during simulation.
-        void adjustPosition(const osg::Vec3f& offset, bool ignoreCollisions);
+        void adjustPosition(const osg::Vec3f& offset);
 
         // apply position offset. Can't be called during simulation
         void applyOffsetChange();
-
-        osg::Vec3f getPosition() const;
-
-        osg::Vec3f getPreviousPosition() const;
 
         /**
          * Returns the half extents of the collision body (scaled according to rendering scale)
@@ -123,19 +118,14 @@ namespace MWPhysics
 
         bool getOnGround() const
         {
-            return mInternalCollisionMode.load(std::memory_order_acquire) && mOnGround.load(std::memory_order_acquire);
+            return mInternalCollisionMode && mOnGround;
         }
 
         void setOnSlope(bool slope);
 
         bool getOnSlope() const
         {
-            return mInternalCollisionMode.load(std::memory_order_acquire) && mOnSlope.load(std::memory_order_acquire);
-        }
-
-        btCollisionObject* getCollisionObject() const
-        {
-            return mCollisionObject.get();
+            return mInternalCollisionMode && mOnSlope;
         }
 
         /// Sets whether this actor should be able to collide with the water surface
@@ -166,10 +156,10 @@ namespace MWPhysics
             mLastStuckPosition = position;
         }
 
-        bool skipCollisions();
+        bool canMoveToWaterSurface(float waterlevel, const btCollisionWorld* world) const;
 
-        void setVelocity(osg::Vec3f velocity);
-        osg::Vec3f velocity();
+        /// Returns the mesh translation, scaled and rotated as necessary
+        osg::Vec3f getScaledMeshTranslation() const;
 
     private:
         MWWorld::Ptr mStandingOnPtr;
@@ -178,32 +168,23 @@ namespace MWPhysics
         void addCollisionMask(int collisionMask);
         int getCollisionMask() const;
 
-        /// Returns the mesh translation, scaled and rotated as necessary
-        osg::Vec3f getScaledMeshTranslation() const;
-
         bool mCanWaterWalk;
-        std::atomic<bool> mWalkingOnWater;
+        bool mWalkingOnWater;
 
         bool mRotationallyInvariant;
 
         std::unique_ptr<btCollisionShape> mShape;
         btConvexShape* mConvexShape;
 
-        std::unique_ptr<btCollisionObject> mCollisionObject;
-
         osg::Vec3f mMeshTranslation;
+        osg::Vec3f mOriginalHalfExtents;
         osg::Vec3f mHalfExtents;
+        osg::Vec3f mRenderingHalfExtents;
         osg::Quat mRotation;
 
         osg::Vec3f mScale;
-        osg::Vec3f mRenderingScale;
-        osg::Vec3f mSimulationPosition;
-        osg::Vec3f mPosition;
-        osg::Vec3f mPreviousPosition;
         osg::Vec3f mPositionOffset;
-        osg::Vec3f mVelocity;
         bool mWorldPositionChanged;
-        bool mSkipCollisions;
         bool mSkipSimulation;
         mutable std::mutex mPositionMutex;
 
@@ -211,9 +192,9 @@ namespace MWPhysics
         osg::Vec3f mLastStuckPosition;
 
         osg::Vec3f mForce;
-        std::atomic<bool> mOnGround;
-        std::atomic<bool> mOnSlope;
-        std::atomic<bool> mInternalCollisionMode;
+        bool mOnGround;
+        bool mOnSlope;
+        bool mInternalCollisionMode;
         bool mExternalCollisionMode;
 
         PhysicsTaskScheduler* mTaskScheduler;

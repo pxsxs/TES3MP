@@ -100,17 +100,6 @@ namespace MWGui
         getWidget(backButton, "BackButton");
         backButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onBackClicked);
 
-        /*
-            Start of tes3mp change (major)
-
-            Disable back button here so players can't change their names after logging into
-            their server accounts
-        */
-        backButton->setVisible(false);
-        /*
-            End of tes3mp change (major)
-        */
-
         MyGUI::Button* okButton;
         getWidget(okButton, "OKButton");
         okButton->setCaption(MWBase::Environment::get().getWindowManager()->getGameSettingString("sOK", ""));
@@ -149,7 +138,7 @@ namespace MWGui
         mPreview->rebuild();
         mPreview->setAngle (mCurrentAngle);
 
-        mPreviewTexture.reset(new osgMyGUI::OSGTexture(mPreview->getTexture()));
+        mPreviewTexture.reset(new osgMyGUI::OSGTexture(mPreview->getTexture(), mPreview->getTextureStateSet()));
         mPreviewImage->setRenderItemTexture(mPreviewTexture.get());
         mPreviewImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f, 1.f, 1.f));
 

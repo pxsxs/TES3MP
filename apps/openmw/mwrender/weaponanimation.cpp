@@ -5,16 +5,6 @@
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/MechanicsHelper.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/world.hpp"
 #include "../mwbase/environment.hpp"
 #include "../mwbase/soundmanager.hpp"
@@ -70,13 +60,13 @@ WeaponAnimation::~WeaponAnimation()
 
 }
 
-void WeaponAnimation::attachArrow(MWWorld::Ptr actor)
+void WeaponAnimation::attachArrow(const MWWorld::Ptr& actor)
 {
     const MWWorld::InventoryStore& inv = actor.getClass().getInventoryStore(actor);
     MWWorld::ConstContainerStoreIterator weaponSlot = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
     if (weaponSlot == inv.end())
         return;
-    if (weaponSlot->getTypeName() != typeid(ESM::Weapon).name())
+    if (weaponSlot->getType() != ESM::Weapon::sRecordId)
         return;
 
     int type = weaponSlot->get<ESM::Weapon>()->mBase->mData.mType;
@@ -119,39 +109,8 @@ void WeaponAnimation::releaseArrow(MWWorld::Ptr actor, float attackStrength)
     MWWorld::ContainerStoreIterator weapon = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
     if (weapon == inv.end())
         return;
-    if (weapon->getTypeName() != typeid(ESM::Weapon).name())
+    if (weapon->getType() != ESM::Weapon::sRecordId)
         return;
-
-    /*
-        Start of tes3mp addition
-
-        If this is an attack by a LocalPlayer or LocalActor, record its attackStrength and
-        rangedWeaponId and prepare an attack packet for sending.
-
-        Unlike melee attacks, ranged attacks require the weapon and ammo IDs to be recorded
-        because players and actors can have multiple projectiles in the air at the same time.
-
-        If it's an attack by a DedicatedPlayer or DedicatedActor, apply the attackStrength
-        from their latest attack packet.
-    */
-    mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(actor);
-
-    if (localAttack)
-    {
-        localAttack->attackStrength = attackStrength;
-        localAttack->rangedWeaponId = weapon->getCellRef().getRefId();
-        localAttack->shouldSend = true;
-    }
-    else
-    {
-        mwmp::Attack *dedicatedAttack = MechanicsHelper::getDedicatedAttack(actor);
-
-        if (dedicatedAttack)
-            attackStrength = dedicatedAttack->attackStrength;
-    }
-    /*
-        End of tes3mp addition
-    */
 
     // The orientation of the launched projectile. Always the same as the actor orientation, even if the ArrowBone's orientation dictates otherwise.
     osg::Quat orient = osg::Quat(actor.getRefData().getPosition().rot[0], osg::Vec3f(-1,0,0))
@@ -164,17 +123,6 @@ void WeaponAnimation::releaseArrow(MWWorld::Ptr actor, float attackStrength)
 
     if (MWMechanics::getWeaponType(weapon->get<ESM::Weapon>()->mBase->mData.mType)->mWeaponClass == ESM::WeaponType::Thrown)
     {
-        /*
-            Start of tes3mp addition
-
-            If this is a local attack, clear the rangedAmmoId used for it
-        */
-        if (localAttack)
-            localAttack->rangedAmmoId = "";
-        /*
-            End of tes3mp addition
-        */
-
         // Thrown weapons get detached now
         osg::Node* weaponNode = getWeaponNode();
         if (!weaponNode)
@@ -183,39 +131,6 @@ void WeaponAnimation::releaseArrow(MWWorld::Ptr actor, float attackStrength)
         if (nodepaths.empty())
             return;
         osg::Vec3f launchPos = osg::computeLocalToWorld(nodepaths[0]).getTrans();
-
-        /*
-            Start of tes3mp addition
-
-            If the actor shooting this is a LocalPlayer or LocalActor, track their projectile origin so it can be sent
-            in the next PlayerAttack or ActorAttack packet
-
-            Otherwise, set the projectileOrigin for a DedicatedPlayer or DedicatedActor
-        */
-        if (localAttack)
-        {
-            localAttack->projectileOrigin.origin[0] = launchPos.x();
-            localAttack->projectileOrigin.origin[1] = launchPos.y();
-            localAttack->projectileOrigin.origin[2] = launchPos.z();
-            localAttack->projectileOrigin.orientation[0] = orient.x();
-            localAttack->projectileOrigin.orientation[1] = orient.y();
-            localAttack->projectileOrigin.orientation[2] = orient.z();
-            localAttack->projectileOrigin.orientation[3] = orient.w();
-        }
-        else
-        {
-            mwmp::Attack* dedicatedAttack = MechanicsHelper::getDedicatedAttack(actor);
-
-            if (dedicatedAttack)
-            {
-                launchPos = osg::Vec3f(dedicatedAttack->projectileOrigin.origin[0], dedicatedAttack->projectileOrigin.origin[1], dedicatedAttack->projectileOrigin.origin[2]);
-                orient = osg::Quat(dedicatedAttack->projectileOrigin.orientation[0], dedicatedAttack->projectileOrigin.orientation[1], dedicatedAttack->projectileOrigin.orientation[2],
-                    dedicatedAttack->projectileOrigin.orientation[3]);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
 
         float fThrownWeaponMinSpeed = gmst.find("fThrownWeaponMinSpeed")->mValue.getFloat();
         float fThrownWeaponMaxSpeed = gmst.find("fThrownWeaponMaxSpeed")->mValue.getFloat();
@@ -238,55 +153,11 @@ void WeaponAnimation::releaseArrow(MWWorld::Ptr actor, float attackStrength)
         if (!mAmmunition)
             return;
 
-        /*
-            Start of tes3mp addition
-
-            If this is a local attack, record the rangedAmmoId used for it
-        */
-        if (localAttack)
-            localAttack->rangedAmmoId = ammo->getCellRef().getRefId();
-        /*
-            End of tes3mp addition
-        */
-
         osg::ref_ptr<osg::Node> ammoNode = mAmmunition->getNode();
         osg::NodePathList nodepaths = ammoNode->getParentalNodePaths();
         if (nodepaths.empty())
             return;
         osg::Vec3f launchPos = osg::computeLocalToWorld(nodepaths[0]).getTrans();
-
-        /*
-            Start of tes3mp addition
-
-            If the actor shooting this is a LocalPlayer or LocalActor, track their projectile origin so it can be sent
-            in the next PlayerAttack or ActorAttack packet
-
-            Otherwise, set the projectileOrigin for a DedicatedPlayer or DedicatedActor
-        */
-        if (localAttack)
-        {
-            localAttack->projectileOrigin.origin[0] = launchPos.x();
-            localAttack->projectileOrigin.origin[1] = launchPos.y();
-            localAttack->projectileOrigin.origin[2] = launchPos.z();
-            localAttack->projectileOrigin.orientation[0] = orient.x();
-            localAttack->projectileOrigin.orientation[1] = orient.y();
-            localAttack->projectileOrigin.orientation[2] = orient.z();
-            localAttack->projectileOrigin.orientation[3] = orient.w();
-        }
-        else
-        {
-            mwmp::Attack* dedicatedAttack = MechanicsHelper::getDedicatedAttack(actor);
-
-            if (dedicatedAttack)
-            {
-                launchPos = osg::Vec3f(dedicatedAttack->projectileOrigin.origin[0], dedicatedAttack->projectileOrigin.origin[1], dedicatedAttack->projectileOrigin.origin[2]);
-                orient = osg::Quat(dedicatedAttack->projectileOrigin.orientation[0], dedicatedAttack->projectileOrigin.orientation[1], dedicatedAttack->projectileOrigin.orientation[2],
-                    dedicatedAttack->projectileOrigin.orientation[3]);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
 
         float fProjectileMinSpeed = gmst.find("fProjectileMinSpeed")->mValue.getFloat();
         float fProjectileMaxSpeed = gmst.find("fProjectileMaxSpeed")->mValue.getFloat();
@@ -301,14 +172,13 @@ void WeaponAnimation::releaseArrow(MWWorld::Ptr actor, float attackStrength)
     }
 }
 
-void WeaponAnimation::addControllers(const std::map<std::string, osg::ref_ptr<osg::MatrixTransform> >& nodes,
-    std::vector<std::pair<osg::ref_ptr<osg::Node>, osg::ref_ptr<osg::NodeCallback>>> &map, osg::Node* objectRoot)
+void WeaponAnimation::addControllers(const Animation::NodeMap& nodes, std::vector<std::pair<osg::ref_ptr<osg::Node>, osg::ref_ptr<osg::Callback>>> &map, osg::Node* objectRoot)
 {
     for (int i=0; i<2; ++i)
     {
         mSpineControllers[i] = nullptr;
 
-        std::map<std::string, osg::ref_ptr<osg::MatrixTransform> >::const_iterator found = nodes.find(i == 0 ? "bip01 spine1" : "bip01 spine2");
+        Animation::NodeMap::const_iterator found = nodes.find(i == 0 ? "bip01 spine1" : "bip01 spine2");
         if (found != nodes.end())
         {
             osg::Node* node = found->second;

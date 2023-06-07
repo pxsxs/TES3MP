@@ -34,6 +34,8 @@ struct File
 
     virtual std::string getFilename() const = 0;
 
+    virtual std::string getHash() const = 0;
+
     virtual unsigned int getVersion() const = 0;
 
     virtual unsigned int getUserVersion() const = 0;
@@ -50,6 +52,7 @@ class NIFFile final : public File
 
     /// File name, used for error messages and opening the file
     std::string filename;
+    std::string hash;
 
     /// Record list
     std::vector<Record*> records;
@@ -92,11 +95,9 @@ public:
     };
 
     /// Used if file parsing fails
-    void fail(const std::string &msg) const
+    [[noreturn]] void fail(const std::string &msg) const
     {
-        std::string err = " NIFFile Error: " + msg;
-        err += "\nFile: " + filename;
-        throw std::runtime_error(err);
+        throw std::runtime_error(" NIFFile Error: " + msg + "\nFile: " + filename);
     }
     /// Used when something goes wrong, but not catastrophically so
     void warn(const std::string &msg) const
@@ -142,6 +143,8 @@ public:
 
     /// Get the name of the file
     std::string getFilename() const override { return filename; }
+
+    std::string getHash() const override { return hash; }
 
     /// Get the version of the NIF format used
     unsigned int getVersion() const override { return ver; }

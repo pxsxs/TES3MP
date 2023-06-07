@@ -3,22 +3,6 @@
 #include <stdexcept>
 #include <limits>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-#include "../mwmp/ScriptController.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include "../mwworld/cellstore.hpp"
-#include "../mwworld/class.hpp"
-
 #include <components/compiler/opcodes.hpp>
 
 #include <components/interpreter/interpreter.hpp>
@@ -74,26 +58,6 @@ namespace MWScript
                             throw std::runtime_error ("animation mode out of range");
                     }
 
-                    /*
-                        Start of tes3mp addition
-
-                        Send an ID_OBJECT_ANIM_PLAY every time an animation is played for an object
-                        through an approved script
-                    */
-                    if (mwmp::Main::isValidPacketScript(ptr.getClass().getScript(ptr)))
-                    {
-                        mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                        objectList->reset();
-
-                        objectList->packetOrigin = ScriptController::getPacketOriginFromContextType(runtime.getContext().getContextType());
-                        objectList->originClientScript = runtime.getContext().getCurrentScriptName();
-                        objectList->addObjectAnimPlay(ptr, group, mode);
-                        objectList->sendObjectAnimPlay();
-                    }
-                    /*
-                        End of tes3mp addition
-                    */
-
                     MWBase::Environment::get().getMechanicsManager()->playAnimationGroup (ptr, group, mode, std::numeric_limits<int>::max(), true);
                }
         };
@@ -137,12 +101,12 @@ namespace MWScript
 
         void installOpcodes (Interpreter::Interpreter& interpreter)
         {
-            interpreter.installSegment5 (Compiler::Animation::opcodeSkipAnim, new OpSkipAnim<ImplicitRef>);
-            interpreter.installSegment5 (Compiler::Animation::opcodeSkipAnimExplicit, new OpSkipAnim<ExplicitRef>);
-            interpreter.installSegment3 (Compiler::Animation::opcodePlayAnim, new OpPlayAnim<ImplicitRef>);
-            interpreter.installSegment3 (Compiler::Animation::opcodePlayAnimExplicit, new OpPlayAnim<ExplicitRef>);
-            interpreter.installSegment3 (Compiler::Animation::opcodeLoopAnim, new OpLoopAnim<ImplicitRef>);
-            interpreter.installSegment3 (Compiler::Animation::opcodeLoopAnimExplicit, new OpLoopAnim<ExplicitRef>);
+            interpreter.installSegment5<OpSkipAnim<ImplicitRef>>(Compiler::Animation::opcodeSkipAnim);
+            interpreter.installSegment5<OpSkipAnim<ExplicitRef>>(Compiler::Animation::opcodeSkipAnimExplicit);
+            interpreter.installSegment3<OpPlayAnim<ImplicitRef>>(Compiler::Animation::opcodePlayAnim);
+            interpreter.installSegment3<OpPlayAnim<ExplicitRef>>(Compiler::Animation::opcodePlayAnimExplicit);
+            interpreter.installSegment3<OpLoopAnim<ImplicitRef>>(Compiler::Animation::opcodeLoopAnim);
+            interpreter.installSegment3<OpLoopAnim<ExplicitRef>>(Compiler::Animation::opcodeLoopAnimExplicit);
         }
     }
 }

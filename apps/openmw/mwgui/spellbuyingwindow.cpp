@@ -4,19 +4,6 @@
 #include <MyGUI_Button.h>
 #include <MyGUI_ScrollView.h>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -24,10 +11,7 @@
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/containerstore.hpp"
-#include "../mwworld/esmstore.hpp"
 
-#include "../mwmechanics/creaturestats.hpp"
-#include "../mwmechanics/actorutil.hpp"
 
 namespace MWGui
 {
@@ -112,10 +96,8 @@ namespace MWGui
 
         std::vector<const ESM::Spell*> spellsToSort;
 
-        for (MWMechanics::Spells::TIterator iter = merchantSpells.begin(); iter!=merchantSpells.end(); ++iter)
+        for (const ESM::Spell* spell : merchantSpells)
         {
-            const ESM::Spell* spell = iter->first;
-
             if (spell->mData.mType!=ESM::Spell::ST_Spell)
                 continue; // don't try to sell diseases, curses or powers
 
@@ -128,10 +110,10 @@ namespace MWGui
                     continue;
             }
 
-            if (playerHasSpell(iter->first->mId))
+            if (playerHasSpell(spell->mId))
                 continue;
 
-            spellsToSort.push_back(iter->first);
+            spellsToSort.push_back(spell);
         }
 
         std::stable_sort(spellsToSort.begin(), spellsToSort.end(), sortSpells);
@@ -169,38 +151,11 @@ namespace MWGui
         MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
         MWMechanics::Spells& spells = stats.getSpells();
         spells.add (mSpellsWidgetMap.find(_sender)->second);
-
-        /*
-            Start of tes3mp addition
-
-            Send an ID_PLAYER_SPELLBOOK packet every time a player buys a spell
-        */
-        mwmp::Main::get().getLocalPlayer()->sendSpellChange(mSpellsWidgetMap.find(_sender)->second, mwmp::SpellbookChanges::ADD);
-        /*
-            End of tes3mp addition
-        */
-
         player.getClass().getContainerStore(player).remove(MWWorld::ContainerStore::sGoldId, price, player);
 
         // add gold to NPC trading gold pool
         MWMechanics::CreatureStats& npcStats = mPtr.getClass().getCreatureStats(mPtr);
-
-        /*
-            Start of tes3mp change (major)
-
-            Don't unilaterally change the merchant's gold pool on our client and instead let the server do it
-        */
-        //npcStats.setGoldPool(npcStats.getGoldPool() + price);
-
-        mwmp::ObjectList* objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectMiscellaneous(mPtr, npcStats.getGoldPool() + price, npcStats.getLastRestockTime().getHour(),
-            npcStats.getLastRestockTime().getDay());
-        objectList->sendObjectMiscellaneous();
-        /*
-            End of tes3mp change (major)
-        */
+        npcStats.setGoldPool(npcStats.getGoldPool() + price);
 
         setPtr(mPtr, mSpellsView->getViewOffset().top);
 

@@ -1,5 +1,7 @@
 #include "filesystemarchive.hpp"
 
+#include <algorithm>
+
 #include <boost/filesystem.hpp>
 
 #include <components/debug/debuglog.hpp>
@@ -40,16 +42,20 @@ namespace VFS
 
                 std::transform(proper.begin() + prefix, proper.end(), std::back_inserter(searchable), normalize_function);
 
-                if (!mIndex.insert (std::make_pair (searchable, file)).second)
+                const auto inserted = mIndex.insert(std::make_pair(searchable, file));
+                if (!inserted.second)
                     Log(Debug::Warning) << "Warning: found duplicate file for '" << proper << "', please check your file system for two files with the same name in different cases.";
+                else
+                    out[inserted.first->first] = &inserted.first->second;
             }
-
             mBuiltIndex = true;
         }
-
-        for (index::iterator it = mIndex.begin(); it != mIndex.end(); ++it)
+        else
         {
-            out[it->first] = &it->second;
+            for (index::iterator it = mIndex.begin(); it != mIndex.end(); ++it)
+            {
+                out[it->first] = &it->second;
+            }
         }
     }
 

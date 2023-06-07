@@ -6,6 +6,7 @@
 #include <components/resource/bulletshape.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
 #include <components/misc/convert.hpp>
+#include <components/bullethelpers/collisionobject.hpp>
 
 #include <BulletCollision/CollisionShapes/btCompoundShape.h>
 #include <BulletCollision/CollisionDispatch/btCollisionObject.h>
@@ -14,23 +15,19 @@
 
 namespace MWPhysics
 {
-    Object::Object(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance, int collisionType, PhysicsTaskScheduler* scheduler)
-        : mShapeInstance(shapeInstance)
+    Object::Object(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance, osg::Quat rotation, int collisionType, PhysicsTaskScheduler* scheduler)
+        : mShapeInstance(std::move(shapeInstance))
         , mSolid(true)
+        , mScale(ptr.getCellRef().getScale(), ptr.getCellRef().getScale(), ptr.getCellRef().getScale())
+        , mPosition(ptr.getRefData().getPosition().asVec3())
+        , mRotation(rotation)
         , mTaskScheduler(scheduler)
     {
         mPtr = ptr;
-
-        mCollisionObject = std::make_unique<btCollisionObject>();
-        mCollisionObject->setCollisionShape(shapeInstance->getCollisionShape());
-
+        mCollisionObject = BulletHelpers::makeCollisionObject(mShapeInstance->mCollisionShape.get(),
+            Misc::Convert::toBullet(mPosition), Misc::Convert::toBullet(rotation));
         mCollisionObject->setUserPointer(this);
-
-        setScale(ptr.getCellRef().getScale());
-        setRotation(ptr.getRefData().getBaseNode()->getAttitude());
-        updatePosition();
-        commitPositionChange();
-
+        mShapeInstance->setLocalScaling(mScale);
         mTaskScheduler->addCollisionObject(mCollisionObject.get(), collisionType, CollisionType_Actor|CollisionType_HeightMap|CollisionType_Projectile);
     }
 
@@ -51,7 +48,7 @@ namespace MWPhysics
         mScaleUpdatePending = true;
     }
 
-    void Object::setRotation(const osg::Quat& quat)
+    void Object::setRotation(osg::Quat quat)
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
         mRotation = quat;
@@ -83,16 +80,6 @@ namespace MWPhysics
         }
     }
 
-    btCollisionObject* Object::getCollisionObject()
-    {
-        return mCollisionObject.get();
-    }
-
-    const btCollisionObject* Object::getCollisionObject() const
-    {
-        return mCollisionObject.get();
-    }
-
     btTransform Object::getTransform() const
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
@@ -114,7 +101,7 @@ namespace MWPhysics
 
     bool Object::isAnimated() const
     {
-        return !mShapeInstance->mAnimatedShapes.empty();
+        return mShapeInstance->isAnimated();
     }
 
     bool Object::animateCollisionShapes()
@@ -122,9 +109,9 @@ namespace MWPhysics
         if (mShapeInstance->mAnimatedShapes.empty())
             return false;
 
-        assert (mShapeInstance->getCollisionShape()->isCompound());
+        assert (mShapeInstance->mCollisionShape->isCompound());
 
-        btCompoundShape* compound = static_cast<btCompoundShape*>(mShapeInstance->getCollisionShape());
+        btCompoundShape* compound = static_cast<btCompoundShape*>(mShapeInstance->mCollisionShape.get());
         for (const auto& [recIndex, shapeIndex] : mShapeInstance->mAnimatedShapes)
         {
             auto nodePathFound = mRecIndexToNodePath.find(recIndex);

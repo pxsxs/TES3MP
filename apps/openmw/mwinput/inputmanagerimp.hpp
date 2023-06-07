@@ -39,6 +39,7 @@ namespace MWInput
     class KeyboardManager;
     class MouseManager;
     class SensorManager;
+    class GyroManager;
 
     /**
     * @brief Class that provides a high-level API for game input
@@ -70,12 +71,20 @@ namespace MWInput
         void setGamepadGuiCursorEnabled(bool enabled) override;
         void setAttemptJump(bool jumping) override;
 
-        void toggleControlSwitch (const std::string& sw, bool value) override;
-        bool getControlSwitch (const std::string& sw) override;
+        void toggleControlSwitch(std::string_view sw, bool value) override;
+        bool getControlSwitch(std::string_view sw) override;
 
-        std::string getActionDescription (int action) override;
-        std::string getActionKeyBindingName (int action) override;
-        std::string getActionControllerBindingName (int action) override;
+        std::string getActionDescription (int action) const override;
+        std::string getActionKeyBindingName (int action) const override;
+        std::string getActionControllerBindingName (int action) const override;
+        bool actionIsActive(int action) const override;
+
+        float getActionValue(int action) const override;
+        bool isControllerButtonPressed(SDL_GameControllerButton button) const override;
+        float getControllerAxisValue(SDL_GameControllerAxis axis) const override;
+        int getMouseMoveX() const override;
+        int getMouseMoveY() const override;
+
         int getNumActions() override { return A_Last; }
         std::vector<int> getActionKeySorting() override;
         std::vector<int> getActionControllerSorting() override;
@@ -91,6 +100,7 @@ namespace MWInput
         void readRecord(ESM::ESMReader& reader, uint32_t type) override;
 
         void resetIdleTime() override;
+        bool isIdle() const override;
 
         void executeAction(int action) override;
 
@@ -119,6 +129,7 @@ namespace MWInput
         KeyboardManager* mKeyboardManager;
         MouseManager* mMouseManager;
         SensorManager* mSensorManager;
+        GyroManager* mGyroManager;
     };
 }
 #endif

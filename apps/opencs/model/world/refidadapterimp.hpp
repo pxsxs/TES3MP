@@ -5,11 +5,11 @@
 
 #include <QVariant>
 
-#include <components/esm/loadalch.hpp>
-#include <components/esm/loadench.hpp>
-#include <components/esm/loadappa.hpp>
-#include <components/esm/loadnpc.hpp>
-#include <components/esm/loadcrea.hpp>
+#include <components/esm3/loadalch.hpp>
+#include <components/esm3/loadench.hpp>
+#include <components/esm3/loadappa.hpp>
+#include <components/esm3/loadnpc.hpp>
+#include <components/esm3/loadcrea.hpp>
 
 #include "columnbase.hpp"
 #include "record.hpp"
@@ -25,6 +25,9 @@ namespace CSMWorld
         const RefIdColumn *mId;
         const RefIdColumn *mModified;
         const RefIdColumn *mType;
+        const RefIdColumn *mBlocked;
+
+        BaseColumns () : mBlocked(nullptr) {}
     };
 
     /// \brief Base adapter for all refereceable record types
@@ -90,6 +93,9 @@ namespace CSMWorld
         if (column==mBase.mType)
             return static_cast<int> (mType);
 
+        if (column==mBase.mBlocked)
+            return (record.get().mRecordFlags & ESM::FLAG_Blocked) != 0;
+
         return QVariant();
     }
 
@@ -102,6 +108,17 @@ namespace CSMWorld
 
         if (column==mBase.mModified)
             record.mState = static_cast<RecordBase::State> (value.toInt());
+        else if (column==mBase.mBlocked)
+        {
+            RecordT record2 = record.get();
+
+            if (value.toInt() != 0)
+                record2.mRecordFlags |= ESM::FLAG_Blocked;
+            else
+                record2.mRecordFlags &= ~ESM::FLAG_Blocked;
+
+            record.setModified(record2);
+        }
     }
 
     template<typename RecordT>
@@ -110,12 +127,21 @@ namespace CSMWorld
         return mType;
     }
 
+    // NOTE: Body Part should not have persistence (but BodyPart is not listed in the Objects
+    //       table at the moment).
+    //
+    //       Spellmaking - not persistent - currently not part of objects table
+    //       Enchanting  - not persistent - currently not part of objects table
+    //
+    //       Leveled Creature - no model, so not persistent
+    //       Leveled Item     - no model, so not persistent
 
     struct ModelColumns : public BaseColumns
     {
         const RefIdColumn *mModel;
+        const RefIdColumn *mPersistence;
 
-        ModelColumns (const BaseColumns& base) : BaseColumns (base), mModel(nullptr) {}
+        ModelColumns (const BaseColumns& base) : BaseColumns (base), mModel(nullptr), mPersistence(nullptr) {}
     };
 
     /// \brief Adapter for IDs with models (all but levelled lists)
@@ -151,6 +177,9 @@ namespace CSMWorld
         if (column==mModel.mModel)
             return QString::fromUtf8 (record.get().mModel.c_str());
 
+        if (column==mModel.mPersistence)
+            return (record.get().mRecordFlags & ESM::FLAG_Persistent) != 0;
+
         return BaseRefIdAdapter<RecordT>::getData (column, data, index);
     }
 
@@ -164,6 +193,13 @@ namespace CSMWorld
         RecordT record2 = record.get();
         if (column==mModel.mModel)
             record2.mModel = value.toString().toUtf8().constData();
+        else if (column==mModel.mPersistence)
+        {
+            if (value.toInt() != 0)
+                record2.mRecordFlags |= ESM::FLAG_Persistent;
+            else
+                record2.mRecordFlags &= ~ESM::FLAG_Persistent;
+        }
         else
         {
             BaseRefIdAdapter<RecordT>::setData (column, data, index, value);
@@ -384,7 +420,7 @@ namespace CSMWorld
 
         IngredEffectRefIdAdapter();
 
-        virtual ~IngredEffectRefIdAdapter();
+        ~IngredEffectRefIdAdapter() override;
 
         void addNestedRow (const RefIdColumn *column,
                 RefIdData& data, int index, int position) const override;
@@ -998,7 +1034,7 @@ namespace CSMWorld
     public:
 
         NpcMiscRefIdAdapter ();
-        virtual ~NpcMiscRefIdAdapter();
+        ~NpcMiscRefIdAdapter() override;
 
         void addNestedRow (const RefIdColumn *column,
                 RefIdData& data, int index, int position) const override;
@@ -1089,7 +1125,7 @@ namespace CSMWorld
     public:
 
         CreatureMiscRefIdAdapter ();
-        virtual ~CreatureMiscRefIdAdapter();
+        ~CreatureMiscRefIdAdapter() override;
 
         void addNestedRow (const RefIdColumn *column,
                 RefIdData& data, int index, int position) const override;
@@ -1642,7 +1678,7 @@ namespace CSMWorld
             newRow.mWander.mTimeOfDay = 0;
             for (int i = 0; i < 8; ++i)
                 newRow.mWander.mIdle[i] = 0;
-            newRow.mWander.mShouldRepeat = 0;
+            newRow.mWander.mShouldRepeat = 1;
             newRow.mCellName = "";
 
             if (position >= (int)list.size())
@@ -1748,9 +1784,15 @@ namespace CSMWorld
                         return static_cast<int>(content.mWander.mIdle[subColIndex-4]);
                     else
                         return QVariant();
-                case 12: // wander repeat
+                case 12: // repeat
                     if (content.mType == ESM::AI_Wander)
                         return content.mWander.mShouldRepeat != 0;
+                    else if (content.mType == ESM::AI_Travel)
+                        return content.mTravel.mShouldRepeat != 0;
+                    else if (content.mType == ESM::AI_Follow || content.mType == ESM::AI_Escort)
+                        return content.mTarget.mShouldRepeat != 0;
+                    else if (content.mType == ESM::AI_Activate)
+                        return content.mActivate.mShouldRepeat != 0;
                     else
                         return QVariant();
                 case 13: // activate name
@@ -1834,6 +1876,7 @@ namespace CSMWorld
                         content.mWander.mDuration = static_cast<short>(value.toInt());
                     else
                         return; // return without saving
+                    break;
                 case 3:
                     if (content.mType == ESM::AI_Wander)
                         content.mWander.mTimeOfDay = static_cast<unsigned char>(value.toInt());
@@ -1858,20 +1901,32 @@ namespace CSMWorld
                 case 12:
                     if (content.mType == ESM::AI_Wander)
                         content.mWander.mShouldRepeat = static_cast<unsigned char>(value.toInt());
+                    else if (content.mType == ESM::AI_Travel)
+                        content.mTravel.mShouldRepeat = static_cast<unsigned char>(value.toInt());
+                    else if (content.mType == ESM::AI_Follow || content.mType == ESM::AI_Escort)
+                        content.mTarget.mShouldRepeat = static_cast<unsigned char>(value.toInt());
+                    else if (content.mType == ESM::AI_Activate)
+                        content.mActivate.mShouldRepeat = static_cast<unsigned char>(value.toInt());
                     else
                         return; // return without saving
 
                     break; // always save
                 case 13: // NAME32
                     if (content.mType == ESM::AI_Activate)
-                        content.mActivate.mName.assign(value.toString().toUtf8().constData());
+                    {
+                        const QByteArray name = value.toString().toUtf8();
+                        content.mActivate.mName.assign(std::string_view(name.constData(), name.size()));
+                    }
                     else
                         return; // return without saving
 
                     break; // always save
                 case 14: // NAME32
                     if (content.mType == ESM::AI_Follow || content.mType == ESM::AI_Escort)
-                        content.mTarget.mId.assign(value.toString().toUtf8().constData());
+                    {
+                        const QByteArray id = value.toString().toUtf8();
+                        content.mTarget.mId.assign(std::string_view(id.constData(), id.size()));
+                    }
                     else
                         return; // return without saving
 

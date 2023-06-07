@@ -37,16 +37,6 @@ namespace MWGui
         void activateQuickKey(int index);
         void updateActivatedQuickKey();
 
-        /*
-            Start of tes3mp addition
-
-            Allow the setting of the selected index from elsewhere in the code
-        */
-        void setSelectedIndex(int index);
-        /*
-            End of tes3mp addition
-        */
-
         /// @note This enum is serialized, so don't move the items around!
         enum QuickKeyType
         {
@@ -60,16 +50,6 @@ namespace MWGui
         void write (ESM::ESMWriter& writer);
         void readRecord (ESM::ESMReader& reader, uint32_t type);
         void clear() override;
-
-        /*
-            Start of tes3mp addition
-
-            Allow unassigning an index directly from elsewhere in the code
-        */
-        void unassignIndex(int index);
-        /*
-            End of tes3mp addition
-        */
 
 
     private:
@@ -96,7 +76,8 @@ namespace MWGui
 
         void onQuickKeyButtonClicked(MyGUI::Widget* sender);
         void onOkButtonClicked(MyGUI::Widget* sender);
-
+        // Check if quick key is still valid
+        inline void validate(int index);
         void unassign(keyData* key);
     };
 

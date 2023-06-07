@@ -258,10 +258,10 @@ download() {
 
 			if [ -z $VERBOSE ]; then
 				RET=0
-				curl --silent --retry 10 -Ly 5 -o $FILE $URL || RET=$?
+				curl --silent --fail --retry 10 -Ly 5 -o $FILE $URL || RET=$?
 			else
 				RET=0
-				curl --retry 10 -Ly 5 -o $FILE $URL || RET=$?
+				curl --fail --retry 10 -Ly 5 -o $FILE $URL || RET=$?
 			fi
 
 			if [ $RET -ne 0 ]; then
@@ -539,14 +539,14 @@ if [ -z $SKIP_DOWNLOAD ]; then
 		"ffmpeg-4.2.2-dev-win${BITS}.zip"
 
 	# MyGUI
-	download "MyGUI 3.4.0" \
-		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" \
-		"MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}.7z"
+	download "MyGUI 3.4.1" \
+		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" \
+		"MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}.7z"
 
 	if [ -n "$PDBS" ]; then
 		download "MyGUI symbols" \
-			"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" \
-			"MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z"
+			"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" \
+			"MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z"
 	fi
 
 	# OpenAL
@@ -554,26 +554,31 @@ if [ -z $SKIP_DOWNLOAD ]; then
 	  "https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/OpenAL-Soft-1.20.1.zip" \
 		"OpenAL-Soft-1.20.1.zip"
 
-	# OSG
-	download "OpenSceneGraph 3.6.5" \
-		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" \
-		"OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}.7z"
+	# OSGoS
+	download "OSGoS 3.6.5" \
+		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" \
+		"OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}.7z"
 
 	if [ -n "$PDBS" ]; then
-		download "OpenSceneGraph symbols" \
-			"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" \
-			"OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z"
+		download "OSGoS symbols" \
+			"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" \
+			"OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z"
 	fi
 
 	# SDL2
-	download "SDL 2.0.12" \
-		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/SDL2-2.0.12.zip" \
-		"SDL2-2.0.12.zip"
+	download "SDL 2.0.18" \
+		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/SDL2-2.0.18.zip" \
+		"SDL2-2.0.18.zip"
 
 	# LZ4
 	download "LZ4 1.9.2" \
 		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/lz4_win${BITS}_v1_9_2.7z" \
 		"lz4_win${BITS}_v1_9_2.7z"
+
+	# LuaJIT
+	download "LuaJIT 2.1.0-beta3" \
+		"https://gitlab.com/OpenMW/openmw-deps/-/raw/main/windows/LuaJIT-2.1.0-beta3-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" \
+		"LuaJIT-2.1.0-beta3-msvc${MSVC_REAL_YEAR}-win${BITS}.7z"
 
 	# Google test and mock
 	if [ ! -z $TEST_FRAMEWORK ]; then
@@ -710,20 +715,20 @@ printf "FFmpeg 4.2.2... "
 cd $DEPS
 echo
 # MyGUI
-printf "MyGUI 3.4.0... "
+printf "MyGUI 3.4.1... "
 {
 	cd $DEPS_INSTALL
 	if [ -d MyGUI ] && \
 		grep "MYGUI_VERSION_MAJOR 3" MyGUI/include/MYGUI/MyGUI_Prerequest.h > /dev/null && \
 		grep "MYGUI_VERSION_MINOR 4" MyGUI/include/MYGUI/MyGUI_Prerequest.h > /dev/null && \
-		grep "MYGUI_VERSION_PATCH 0" MyGUI/include/MYGUI/MyGUI_Prerequest.h > /dev/null
+		grep "MYGUI_VERSION_PATCH 1" MyGUI/include/MYGUI/MyGUI_Prerequest.h > /dev/null
 	then
 		printf "Exists. "
 	elif [ -z $SKIP_EXTRACT ]; then
 		rm -rf MyGUI
-		eval 7z x -y "${DEPS}/MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" $STRIP
-		[ -n "$PDBS" ] && eval 7z x -y "${DEPS}/MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" $STRIP
-		mv "MyGUI-3.4.0-msvc${MSVC_REAL_YEAR}-win${BITS}" MyGUI
+		eval 7z x -y "${DEPS}/MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" $STRIP
+		[ -n "$PDBS" ] && eval 7z x -y "${DEPS}/MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" $STRIP
+		mv "MyGUI-3.4.1-msvc${MSVC_REAL_YEAR}-win${BITS}" MyGUI
 	fi
 	export MYGUI_HOME="$(real_pwd)/MyGUI"
 	for CONFIGURATION in ${CONFIGURATIONS[@]}; do
@@ -759,8 +764,8 @@ printf "OpenAL-Soft 1.20.1... "
 }
 cd $DEPS
 echo
-# OSG
-printf "OSG 3.6.5... "
+# OSGoS
+printf "OSGoS 3.6.5... "
 {
 	cd $DEPS_INSTALL
 	if [ -d OSG ] && \
@@ -771,9 +776,9 @@ printf "OSG 3.6.5... "
 		printf "Exists. "
 	elif [ -z $SKIP_EXTRACT ]; then
 		rm -rf OSG
-		eval 7z x -y "${DEPS}/OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" $STRIP
-		[ -n "$PDBS" ] && eval 7z x -y "${DEPS}/OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" $STRIP
-		mv "OSG-3.6.5-msvc${MSVC_REAL_YEAR}-win${BITS}" OSG
+		eval 7z x -y "${DEPS}/OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}.7z" $STRIP
+		[ -n "$PDBS" ] && eval 7z x -y "${DEPS}/OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}-sym.7z" $STRIP
+		mv "OSGoS-3.6.5-b02abe2-msvc${MSVC_REAL_YEAR}-win${BITS}" OSG
 	fi
 	OSG_SDK="$(real_pwd)/OSG"
 	add_cmake_opts -DOSG_DIR="$OSG_SDK"
@@ -873,7 +878,13 @@ fi
 		done
 		echo Done.
 	else
-		QT_SDK="C:/Qt/5.13/msvc2017${SUFFIX}"
+		# default to msvc2019 which pre-loads Qt 5.15.2
+		qt_version="5.15.2"
+		if [ "msvc${MSVC_REAL_YEAR}" == "msvc2017" ]; then
+			qt_version="5.13"
+    	fi
+		QT_SDK="C:/Qt/${qt_version}/msvc${MSVC_REAL_YEAR}${SUFFIX}"
+
 		add_cmake_opts -DQT_QMAKE_EXECUTABLE="${QT_SDK}/bin/qmake.exe" \
 			-DCMAKE_PREFIX_PATH="$QT_SDK"
 		for CONFIGURATION in ${CONFIGURATIONS[@]}; do
@@ -893,17 +904,17 @@ fi
 cd $DEPS
 echo
 # SDL2
-printf "SDL 2.0.12... "
+printf "SDL 2.0.18... "
 {
-	if [ -d SDL2-2.0.12 ]; then
+	if [ -d SDL2-2.0.18 ]; then
 		printf "Exists. "
 	elif [ -z $SKIP_EXTRACT ]; then
-		rm -rf SDL2-2.0.12
-		eval 7z x -y SDL2-2.0.12.zip $STRIP
+		rm -rf SDL2-2.0.18
+		eval 7z x -y SDL2-2.0.18.zip $STRIP
 	fi
-	export SDL2DIR="$(real_pwd)/SDL2-2.0.12"
+	export SDL2DIR="$(real_pwd)/SDL2-2.0.18"
 	for config in ${CONFIGURATIONS[@]}; do
-		add_runtime_dlls $config "$(pwd)/SDL2-2.0.12/lib/x${ARCHSUFFIX}/SDL2.dll"
+		add_runtime_dlls $config "$(pwd)/SDL2-2.0.18/lib/x${ARCHSUFFIX}/SDL2.dll"
 	done
 	echo Done.
 }
@@ -929,6 +940,25 @@ printf "LZ4 1.9.2... "
 			LZ4_CONFIGURATION="Release"
 		fi
 		add_runtime_dlls $CONFIGURATION "$(pwd)/LZ4_1.9.2/bin/${LZ4_CONFIGURATION}/liblz4.dll"
+	done
+	echo Done.
+}
+cd $DEPS
+echo
+# LuaJIT 2.1.0-beta3
+printf "LuaJIT 2.1.0-beta3... "
+{
+	if [ -d LuaJIT ]; then
+		printf "Exists. "
+	elif [ -z $SKIP_EXTRACT ]; then
+		rm -rf LuaJIT
+		eval 7z x -y LuaJIT-2.1.0-beta3-msvc${MSVC_REAL_YEAR}-win${BITS}.7z -o$(real_pwd)/LuaJIT $STRIP
+	fi
+	export LUAJIT_DIR="$(real_pwd)/LuaJIT"
+	add_cmake_opts -DLuaJit_INCLUDE_DIR="${LUAJIT_DIR}/include" \
+		-DLuaJit_LIBRARY="${LUAJIT_DIR}/lib/lua51.lib"
+	for CONFIGURATION in ${CONFIGURATIONS[@]}; do
+		add_runtime_dlls $CONFIGURATION "$(pwd)/LuaJIT/bin/lua51.dll"
 	done
 	echo Done.
 }
@@ -994,6 +1024,7 @@ echo
 echo "Setting up OpenMW build..."
 add_cmake_opts -DOPENMW_MP_BUILD=on
 add_cmake_opts -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}"
+add_cmake_opts -DOPENMW_USE_SYSTEM_SQLITE3=OFF
 if [ ! -z $CI ]; then
 	case $STEP in
 		components )

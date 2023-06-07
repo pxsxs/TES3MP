@@ -6,31 +6,16 @@
 
 #include <components/settings/settings.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/Worldstate.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 
-#include "../mwmechanics/creaturestats.hpp"
-#include "../mwmechanics/actorutil.hpp"
-
 #include "../mwworld/class.hpp"
 #include "../mwworld/containerstore.hpp"
 #include "../mwworld/actionteleport.hpp"
-#include "../mwworld/esmstore.hpp"
 #include "../mwworld/cellstore.hpp"
+
 
 namespace MWGui
 {
@@ -56,7 +41,7 @@ namespace MWGui
                           mSelect->getHeight());
     }
 
-    void TravelWindow::addDestination(const std::string& name, ESM::Position pos, bool interior)
+    void TravelWindow::addDestination(const std::string& name, const ESM::Position &pos, bool interior)
     {
         int price;
 
@@ -86,7 +71,7 @@ namespace MWGui
 
         // Add price for the travelling followers
         std::set<MWWorld::Ptr> followers;
-        MWWorld::ActionTeleport::getFollowers(player, followers);
+        MWWorld::ActionTeleport::getFollowers(player, followers, !interior);
 
         // Apply followers cost, unlike vanilla the first follower doesn't travel for free
         price *= 1 + static_cast<int>(followers.size());
@@ -127,7 +112,7 @@ namespace MWGui
         std::vector<ESM::Transport::Dest> transport;
         if (mPtr.getClass().isNpc())
             transport = mPtr.get<ESM::NPC>()->mBase->getTransport();
-        else if (mPtr.getTypeName() == typeid(ESM::Creature).name())
+        else if (mPtr.getType() == ESM::Creature::sRecordId)
             transport = mPtr.get<ESM::Creature>()->mBase->getTransport();
 
         for(unsigned int i = 0;i<transport.size();i++)
@@ -177,23 +162,7 @@ namespace MWGui
 
         // add gold to NPC trading gold pool
         MWMechanics::CreatureStats& npcStats = mPtr.getClass().getCreatureStats(mPtr);
-
-        /*
-            Start of tes3mp change (major)
-
-            Don't unilaterally change the merchant's gold pool on our client and instead let the server do it
-        */
-        //npcStats.setGoldPool(npcStats.getGoldPool() + price);
-
-        mwmp::ObjectList* objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectMiscellaneous(mPtr, npcStats.getGoldPool() + price, npcStats.getLastRestockTime().getHour(),
-            npcStats.getLastRestockTime().getDay());
-        objectList->sendObjectMiscellaneous();
-        /*
-            End of tes3mp change (major)
-        */
+        npcStats.setGoldPool(npcStats.getGoldPool() + price);
 
         MWBase::Environment::get().getWindowManager()->fadeScreenOut(1);
         ESM::Position pos = *_sender->getUserData<ESM::Position>();
@@ -204,17 +173,8 @@ namespace MWGui
             ESM::Position playerPos = player.getRefData().getPosition();
             float d = (osg::Vec3f(pos.pos[0], pos.pos[1], 0) - osg::Vec3f(playerPos.pos[0], playerPos.pos[1], 0)).length();
             int hours = static_cast<int>(d /MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>().find("fTravelTimeMult")->mValue.getFloat());
-            MWBase::Environment::get().getMechanicsManager()->rest(hours, true);
-
-            /*
-                Start of tes3mp change (major)
-
-                Multiplayer requires that time not get advanced here
-            */
-            //MWBase::Environment::get().getWorld()->advanceTime(hours);
-            /*
-                End of tes3mp change (major)
-            */
+            MWBase::Environment::get().getMechanicsManager ()->rest (hours, true);
+            MWBase::Environment::get().getWorld()->advanceTime(hours);
         }
 
         MWBase::Environment::get().getWindowManager()->removeGuiMode(GM_Travel);

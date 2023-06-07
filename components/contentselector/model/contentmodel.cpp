@@ -2,16 +2,18 @@
 #include "esmfile.hpp"
 
 #include <stdexcept>
+#include <unordered_set>
 
 #include <QDir>
 #include <QTextCodec>
 #include <QDebug>
 
-#include <components/esm/esmreader.hpp>
+#include <components/esm3/esmreader.hpp>
 
-ContentSelectorModel::ContentModel::ContentModel(QObject *parent, QIcon warningIcon) :
+ContentSelectorModel::ContentModel::ContentModel(QObject *parent, QIcon warningIcon, bool showOMWScripts) :
     QAbstractTableModel(parent),
     mWarningIcon(warningIcon),
+    mShowOMWScripts(showOMWScripts),
     mMimeType ("application/omwcontent"),
     mMimeTypes (QStringList() << mMimeType),
     mColumnCount (1),
@@ -107,34 +109,28 @@ Qt::ItemFlags ContentSelectorModel::ContentModel::flags(const QModelIndex &index
 
     // addon can be checked if its gamefile is
     // ... special case, addon with no dependency can be used with any gamefile.
-    bool gamefileChecked = (file->gameFiles().count() == 0);
+    bool gamefileChecked = false;
+    bool noGameFiles = true;
     for (const QString &fileName : file->gameFiles())
     {
         for (QListIterator<EsmFile *> dependencyIter(mFiles); dependencyIter.hasNext(); dependencyIter.next())
         {
             //compare filenames only.  Multiple instances
             //of the filename (with different paths) is not relevant here.
-            bool depFound = (dependencyIter.peekNext()->fileName().compare(fileName, Qt::CaseInsensitive) == 0);
-
-            if (!depFound)
+            EsmFile* depFile = dependencyIter.peekNext();
+            if (!depFile->isGameFile() || depFile->fileName().compare(fileName, Qt::CaseInsensitive) != 0)
                 continue;
 
-            if (!gamefileChecked)
+            noGameFiles = false;
+            if (isChecked(depFile->filePath()))
             {
-                if (isChecked (dependencyIter.peekNext()->filePath()))
-                    gamefileChecked = (dependencyIter.peekNext()->isGameFile());
-            }
-
-            // force it to iterate all files in cases where the current
-            // dependency is a game file to ensure that a later duplicate
-            // game file is / is not checked.
-            // (i.e., break only if it's not a gamefile or the game file has been checked previously)
-            if (gamefileChecked || !(dependencyIter.peekNext()->isGameFile()))
+                gamefileChecked = true;
                 break;
+            }
         }
     }
 
-    if (gamefileChecked)
+    if (gamefileChecked || noGameFiles)
     {
         returnFlags = Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled;
     }
@@ -422,7 +418,10 @@ void ContentSelectorModel::ContentModel::addFiles(const QString &path)
     QDir dir(path);
     QStringList filters;
     filters << "*.esp" << "*.esm" << "*.omwgame" << "*.omwaddon";
+    if (mShowOMWScripts)
+        filters << "*.omwscripts";
     dir.setNameFilters(filters);
+    dir.setSorting(QDir::Name);
 
     for (const QString &path2 : dir.entryList())
     {
@@ -430,6 +429,19 @@ void ContentSelectorModel::ContentModel::addFiles(const QString &path)
 
         if (item(info.fileName()))
             continue;
+
+        // Enabled by default in system openmw.cfg; shouldn't be shown in content list.
+        if (info.fileName().compare("builtin.omwscripts", Qt::CaseInsensitive) == 0)
+            continue;
+
+        if (info.fileName().endsWith(".omwscripts", Qt::CaseInsensitive))
+        {
+            EsmFile *file = new EsmFile(path2);
+            file->setDate(info.lastModified());
+            file->setFilePath(info.absoluteFilePath());
+            addFile(file);
+            continue;
+        }
 
         try {
             ESM::ESMReader fileReader;
@@ -468,8 +480,6 @@ void ContentSelectorModel::ContentModel::addFiles(const QString &path)
         }
 
     }
-
-    sortFiles();
 }
 
 void ContentSelectorModel::ContentModel::clearFiles()
@@ -498,41 +508,37 @@ QStringList ContentSelectorModel::ContentModel::gameFiles() const
 
 void ContentSelectorModel::ContentModel::sortFiles()
 {
-    //first, sort the model such that all dependencies are ordered upstream (gamefile) first.
-    bool movedFiles = true;
-    int fileCount = mFiles.size();
-
+    emit layoutAboutToBeChanged();
     //Dependency sort
-    //iterate until no sorting of files occurs
-    while (movedFiles)
+    std::unordered_set<const EsmFile*> moved;
+    for(int i = mFiles.size() - 1; i > 0;)
     {
-        movedFiles = false;
-        //iterate each file, obtaining a reference to it's gamefiles list
-        for (int i = 0; i < fileCount; i++)
+        const auto file = mFiles.at(i);
+        if(moved.find(file) == moved.end())
         {
-            QModelIndex idx1 = index (i, 0, QModelIndex());
-            const QStringList &gamefiles = mFiles.at(i)->gameFiles();
-            //iterate each file after the current file, verifying that none of it's
-            //dependencies appear.
-            for (int j = i + 1; j < fileCount; j++)
+            int index = -1;
+            for(int j = 0; j < i; ++j)
             {
-                if (gamefiles.contains(mFiles.at(j)->fileName(), Qt::CaseInsensitive)
-                 || (!mFiles.at(i)->isGameFile() && gamefiles.isEmpty()
-                 && mFiles.at(j)->fileName().compare("Morrowind.esm", Qt::CaseInsensitive) == 0)) // Hack: implicit dependency on Morrowind.esm for dependency-less files
+                const QStringList& gameFiles = mFiles.at(j)->gameFiles();
+                if(gameFiles.contains(file->fileName(), Qt::CaseInsensitive)
+                    || (!mFiles.at(j)->isGameFile() && gameFiles.isEmpty()
+                    && file->fileName().compare("Morrowind.esm", Qt::CaseInsensitive) == 0)) // Hack: implicit dependency on Morrowind.esm for dependency-less files
                 {
-                        mFiles.move(j, i);
-
-                        QModelIndex idx2 = index (j, 0, QModelIndex());
-
-                        emit dataChanged (idx1, idx2);
-
-                        movedFiles = true;
+                    index = j;
+                    break;
                 }
             }
-            if (movedFiles)
-                break;
+            if(index >= 0)
+            {
+                mFiles.move(i, index);
+                moved.insert(file);
+                continue;
+            }
         }
+        --i;
+        moved.clear();
     }
+    emit layoutChanged();
 }
 
 bool ContentSelectorModel::ContentModel::isChecked(const QString& filepath) const
@@ -543,7 +549,7 @@ bool ContentSelectorModel::ContentModel::isChecked(const QString& filepath) cons
     return false;
 }
 
-bool ContentSelectorModel::ContentModel::isEnabled (QModelIndex index) const
+bool ContentSelectorModel::ContentModel::isEnabled (const QModelIndex& index) const
 {
     return (flags(index) & Qt::ItemIsEnabled);
 }

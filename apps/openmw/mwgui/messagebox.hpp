@@ -25,16 +25,7 @@ namespace MWGui
             void onFrame (float frameDuration);
             void createMessageBox (const std::string& message, bool stat = false);
             void removeStaticMessageBox ();
-            /*
-                Start of tes3mp change (major)
-
-                Add a hasServerOrigin boolean to the list of arguments so those messageboxes
-                can be differentiated from client-only ones
-            */
-            bool createInteractiveMessageBox (const std::string& message, const std::vector<std::string>& buttons, bool hasServerOrigin = false);
-            /*
-                End of tes3mp change (major)
-            */
+            bool createInteractiveMessageBox (const std::string& message, const std::vector<std::string>& buttons);
             bool isInteractiveMessageBox ();
 
             int getMessagesCount();
@@ -56,12 +47,17 @@ namespace MWGui
 
             void onButtonPressed(int button) { eventButtonPressed(button); eventButtonPressed.clear(); }
 
+            void setVisible(bool value);
+
+            const std::vector<MessageBox*> getActiveMessageBoxes();
+
         private:
             std::vector<MessageBox*> mMessageBoxes;
             InteractiveMessageBox* mInterMessageBoxe;
             MessageBox* mStaticMessageBox;
             float mMessageBoxSpeed;
             int mLastButtonPressed;
+            bool mVisible = true;
     };
 
     class MessageBox : public Layout
@@ -69,15 +65,17 @@ namespace MWGui
         public:
             MessageBox (MessageBoxManager& parMessageBoxManager, const std::string& message);
             void setMessage (const std::string& message);
+            const std::string& getMessage() { return mMessage; };
             int getHeight ();
             void update (int height);
+            void setVisible(bool value);
 
             float mCurrentTime;
             float mMaxTime;
 
         protected:
             MessageBoxManager& mMessageBoxManager;
-            const std::string& mMessage;
+            std::string mMessage;
             MyGUI::EditBox* mMessageWidget;
             int mBottomPadding;
             int mNextBoxPadding;
@@ -95,16 +93,6 @@ namespace MWGui
             bool exit() override { return false; }
 
             bool mMarkedToDelete;
-
-            /*
-                Start of tes3mp addition
-
-                Track whether the message box has a server origin
-            */
-            bool mHasServerOrigin = false;
-            /*
-                End of tes3mp addition
-            */
 
         private:
             void buttonActivated (MyGUI::Widget* _widget);

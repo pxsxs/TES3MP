@@ -21,6 +21,7 @@
 
 #include <array>
 #include <mutex>
+#include <string>
 
 #include <osg/Camera>
 #include <osg/Material>
@@ -31,7 +32,6 @@
 #include <osgShadow/ShadowTechnique>
 
 #include <components/shader/shadermanager.hpp>
-#include <components/terrain/quadtreeworld.hpp>
 
 namespace SceneUtil {
 
@@ -90,27 +90,28 @@ namespace SceneUtil {
         class ComputeLightSpaceBounds : public osg::NodeVisitor, public osg::CullStack
         {
         public:
-            ComputeLightSpaceBounds(osg::Viewport* viewport, const osg::Matrixd& projectionMatrix, osg::Matrixd& viewMatrix);
+            ComputeLightSpaceBounds();
 
-            void apply(osg::Node& node) override;
+            void apply(osg::Node& node) override final;
+            void apply(osg::Group& node) override;
 
-            void apply(osg::Drawable& drawable) override;
-
-            void apply(Terrain::QuadTreeWorld& quadTreeWorld);
+            void apply(osg::Drawable& drawable) override final;
+            void apply(osg::Geometry& drawable) override;
 
             void apply(osg::Billboard&) override;
 
             void apply(osg::Projection&) override;
 
-            void apply(osg::Transform& transform) override;
+            void apply(osg::Transform& transform) override final;
+            void apply(osg::MatrixTransform& transform) override;
 
             void apply(osg::Camera&) override;
-
-            using osg::NodeVisitor::apply;
 
             void updateBound(const osg::BoundingBox& bb);
 
             void update(const osg::Vec3& v);
+
+            void reset() override;
 
             osg::BoundingBox _bb;
         };
@@ -215,8 +216,6 @@ namespace SceneUtil {
 
         virtual void createShaders();
 
-        virtual std::array<osg::ref_ptr<osg::Program>, GL_ALWAYS - GL_NEVER + 1> getCastingPrograms() const { return _castingPrograms; }
-
         virtual bool selectActiveLights(osgUtil::CullVisitor* cv, ViewDependentData* vdd) const;
 
         virtual osg::Polytope computeLightViewFrustumPolytope(Frustum& frustum, LightData& positionedLight);
@@ -235,8 +234,14 @@ namespace SceneUtil {
 
         virtual osg::StateSet* prepareStateSetForRenderingShadow(ViewDependentData& vdd, unsigned int traversalNumber) const;
 
+        void setWorldMask(unsigned int worldMask) { _worldMask = worldMask; }
+
+        osg::ref_ptr<osg::StateSet> getOrCreateShadowsBinStateSet();
+
     protected:
         virtual ~MWShadowTechnique();
+
+        osg::ref_ptr<ComputeLightSpaceBounds>   _clsb;
 
         typedef std::map< osgUtil::CullVisitor*, osg::ref_ptr<ViewDependentData> >  ViewDependentDataMap;
         mutable std::mutex                      _viewDependentDataMapMutex;
@@ -266,6 +271,8 @@ namespace SceneUtil {
 
         float                                   _shadowFadeStart = 0.0;
 
+        unsigned int                            _worldMask = ~0u;
+
         class DebugHUD final : public osg::Referenced
         {
         public:
@@ -291,6 +298,9 @@ namespace SceneUtil {
 
         osg::ref_ptr<DebugHUD>                  _debugHud;
         std::array<osg::ref_ptr<osg::Program>, GL_ALWAYS - GL_NEVER + 1> _castingPrograms;
+        const std::string _shadowsBinName = "ShadowsBin_" + std::to_string(reinterpret_cast<std::uint64_t>(this));
+        osg::ref_ptr<osgUtil::RenderBin> _shadowsBin;
+        osg::ref_ptr<osg::StateSet> _shadowsBinStateSet;
     };
 
 }

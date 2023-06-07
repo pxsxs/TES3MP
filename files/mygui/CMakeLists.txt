@@ -1,4 +1,4 @@
-if (NOT DEFINED OPENMW_MYGUI_FILES_ROOT)
+if (NOT DEFINED OPENMW_RESOURCES_ROOT)
     return()
 endif()
 
@@ -92,20 +92,9 @@ set(MYGUI_FILES
     openmw_jail_screen.layout
     DejaVuLGCSansMono.ttf
     ../launcher/images/openmw.png
-    # Start of tes3mp addition
-    ../tes3mp/tes3mp_logo.png
-    # End of tes3mp addition
     OpenMWResourcePlugin.xml
     skins.xml
-
-    tes3mp_login.layout
-    tes3mp_login.skin.xml
-    tes3mp_dialog_list.layout
-    tes3mp_chat.layout
-    tes3mp_chat.skin.xml
-    tes3mp_text_input.layout
-    RussoOne-Regular.ttf
 )
 
 
-copy_all_resource_files(${CMAKE_CURRENT_SOURCE_DIR} ${OPENMW_MYGUI_FILES_ROOT} ${DDIRRELATIVE} "${MYGUI_FILES}")
+copy_all_resource_files(${CMAKE_CURRENT_SOURCE_DIR} ${OPENMW_RESOURCES_ROOT} ${DDIRRELATIVE} "${MYGUI_FILES}")

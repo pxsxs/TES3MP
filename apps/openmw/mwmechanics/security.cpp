@@ -1,19 +1,5 @@
 #include "security.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include "../mwworld/cellstore.hpp"
-
 #include <components/misc/rng.hpp>
 
 #include "../mwworld/class.hpp"
@@ -70,31 +56,7 @@ namespace MWMechanics
         {
             if (Misc::Rng::roll0to99() <= x)
             {
-                /*
-                    Start of tes3mp change (major)
-
-                    Disable unilateral locking on this client and expect the server's reply to our
-                    packet to do it instead
-                */
-                //lock.getCellRef().unlock();
-                /*
-                    End of tes3mp change (major)
-                */
-
-                /*
-                    Start of tes3mp addition
-
-                    Send an ID_OBJECT_LOCK packet every time an object is unlocked here
-                */
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectLock(lock, 0);
-                objectList->sendObjectLock();
-                /*
-                    End of tes3mp addition
-                */
-
+                lock.getCellRef().unlock();
                 resultMessage = "#{sLockSuccess}";
                 resultSound = "Open Lock";
                 mActor.getClass().skillUsageSucceeded(mActor, ESM::Skill::Security, 1);
@@ -138,34 +100,11 @@ namespace MWMechanics
         {
             if (Misc::Rng::roll0to99() <= x)
             {
-                /*
-                    Start of tes3mp change (major)
-
-                    Disable unilateral trap disarming on this client and expect the server's reply to our
-                    packet to do it instead
-                */
-                //trap.getCellRef().setTrap("");
-                /*
-                    End of tes3mp change (major)
-                */
+                trap.getCellRef().setTrap("");
 
                 resultSound = "Disarm Trap";
                 resultMessage = "#{sTrapSuccess}";
                 mActor.getClass().skillUsageSucceeded(mActor, ESM::Skill::Security, 0);
-
-                /*
-                    Start of tes3mp addition
-
-                    Send an ID_OBJECT_TRAP packet every time a trap is disarmed
-                */
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectTrap(trap, trap.getRefData().getPosition(), true);
-                objectList->sendObjectTrap();
-                /*
-                    End of tes3mp addition
-                */
             }
             else
                 resultMessage = "#{sTrapFail}";

@@ -10,7 +10,7 @@
 namespace DetourNavigator
 {
     std::optional<osg::Vec3f> findRandomPointAroundCircle(const dtNavMesh& navMesh, const osg::Vec3f& halfExtents,
-        const osg::Vec3f& start, const float maxRadius, const Flags includeFlags, const Settings& settings)
+        const osg::Vec3f& start, const float maxRadius, const Flags includeFlags, const DetourSettings& settings)
     {
         dtNavMeshQuery navMeshQuery;
         if (!initNavMeshQuery(navMeshQuery, navMesh, settings.mMaxNavMeshQueryNodes))
@@ -19,7 +19,7 @@ namespace DetourNavigator
         dtQueryFilter queryFilter;
         queryFilter.setIncludeFlags(includeFlags);
 
-        dtPolyRef startRef = findNearestPolyExpanding(navMeshQuery, queryFilter, start, halfExtents);
+        dtPolyRef startRef = findNearestPoly(navMeshQuery, queryFilter, start, halfExtents * 4);
         if (startRef == 0)
             return std::optional<osg::Vec3f>();
 

@@ -3,17 +3,8 @@
 
 #include "typedaipackage.hpp"
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwworld/ptr.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include <string>
+#include <string_view>
 
 #include "pathfinding.hpp"
 
@@ -34,18 +25,7 @@ namespace MWMechanics
         public:
             /// Constructor
             /** \param objectId Reference to object to activate **/
-            explicit AiActivate(const std::string &objectId);
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to initialize an AiActivate package with a specific Ptr
-                as the target, allowing for more fine-tuned activation of objects
-            */
-            AiActivate(MWWorld::Ptr object);
-            /*
-                End of tes3mp addition
-            */
+            explicit AiActivate(std::string_view objectId, bool repeat);
 
             explicit AiActivate(const ESM::AiSequence::AiActivate* activate);
 
@@ -57,16 +37,6 @@ namespace MWMechanics
 
         private:
             const std::string mObjectId;
-
-            /*
-                Start of tes3mp addition
-
-                Track the object associated with this AiActivate package
-            */
-            MWWorld::Ptr mObjectPtr;
-            /*
-                End of tes3mp addition
-            */
     };
 }
 #endif // GAME_MWMECHANICS_AIACTIVATE_H

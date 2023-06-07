@@ -6,30 +6,12 @@
 #include <components/esm/records.hpp>
 #include <components/widgets/list.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/Worldstate.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
-#include "../mwbase/environment.hpp"
-#include "../mwbase/world.hpp"
 
 #include "../mwworld/containerstore.hpp"
 #include "../mwworld/class.hpp"
-#include "../mwworld/esmstore.hpp"
 
-#include "../mwmechanics/spells.hpp"
-#include "../mwmechanics/creaturestats.hpp"
-#include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/spellutil.hpp"
 
 #include "tooltips.hpp"
@@ -418,45 +400,15 @@ namespace MWGui
 
         // add gold to NPC trading gold pool
         MWMechanics::CreatureStats& npcStats = mPtr.getClass().getCreatureStats(mPtr);
-
-        /*
-            Start of tes3mp change (major)
-
-            Don't unilaterally change the merchant's gold pool on our client and instead let the server do it
-        */
-        //npcStats.setGoldPool(npcStats.getGoldPool() + price);
-
-        mwmp::ObjectList* objectList = mwmp::Main::get().getNetworking()->getObjectList();
-        objectList->reset();
-        objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-        objectList->addObjectMiscellaneous(mPtr, npcStats.getGoldPool() + price, npcStats.getLastRestockTime().getHour(),
-            npcStats.getLastRestockTime().getDay());
-        objectList->sendObjectMiscellaneous();
-        /*
-            End of tes3mp change (major)
-        */
+        npcStats.setGoldPool(npcStats.getGoldPool() + price);
 
         MWBase::Environment::get().getWindowManager()->playSound ("Mysticism Hit");
 
-        /*
-            Start of tes3mp change (major)
-
-            Don't create a record and don't add the spell to the player's spellbook;
-            instead just send its record to the server and expect the server to add it
-            to the player's spellbook
-        */
-        /*
         const ESM::Spell* spell = MWBase::Environment::get().getWorld()->createRecord(mSpell);
 
         MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
         MWMechanics::Spells& spells = stats.getSpells();
-        spells.add(spell->mId);
-        */
-
-        mwmp::Main::get().getNetworking()->getWorldstate()->sendSpellRecord(&mSpell);
-        /*
-            End of tes3mp addition
-        */
+        spells.add (spell->mId);
 
         MWBase::Environment::get().getWindowManager()->removeGuiMode (GM_SpellCreation);
     }
@@ -498,7 +450,7 @@ namespace MWGui
 
         for (const ESM::ENAMstruct& effect : mEffects)
         {
-            y += std::max(1.f, MWMechanics::calcEffectCost(effect));
+            y += std::max(1.f, MWMechanics::calcEffectCost(effect, nullptr, MWMechanics::EffectCostMethod::PlayerSpell));
 
             if (effect.mRange == ESM::RT_Target)
                 y *= 1.5;
@@ -562,10 +514,8 @@ namespace MWGui
 
         std::vector<short> knownEffects;
 
-        for (MWMechanics::Spells::TIterator it = spells.begin(); it != spells.end(); ++it)
+        for (const ESM::Spell* spell : spells)
         {
-            const ESM::Spell* spell = it->first;
-
             // only normal spells count
             if (spell->mData.mType != ESM::Spell::ST_Spell)
                 continue;

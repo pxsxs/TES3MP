@@ -1,26 +1,8 @@
 #include <components/debug/debuglog.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "../mwbase/windowmanager.hpp"
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/PlayerList.hpp"
-#include "../mwmp/ObjectList.hpp"
-#include "../mwmp/CellController.hpp"
-#include "../mwmp/ScriptController.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include <components/sceneutil/positionattitudetransform.hpp>
 
-#include <components/esm/loadcell.hpp>
+#include <components/esm3/loadcell.hpp>
 
 #include <components/compiler/opcodes.hpp>
 
@@ -50,7 +32,7 @@ namespace MWScript
             std::vector<MWWorld::Ptr> actors;
             MWBase::Environment::get().getWorld()->getActorsStandingOn (ptr, actors);
             for (auto& actor : actors)
-                MWBase::Environment::get().getWorld()->moveObjectBy(actor, diff, false, false);
+                MWBase::Environment::get().getWorld()->moveObjectBy(actor, diff);
         }
 
         template<class R>
@@ -60,9 +42,18 @@ namespace MWScript
 
                 void execute (Interpreter::Runtime& runtime) override
                 {
-                    MWWorld::Ptr from = R()(runtime);
+                    MWWorld::Ptr from = R()(runtime, !R::implicit);
                     std::string name = runtime.getStringLiteral (runtime[0].mInteger);
                     runtime.pop();
+
+                    if (from.isEmpty())
+                    {
+                        std::string error = "Missing implicit ref";
+                        runtime.getContext().report(error);
+                        Log(Debug::Error) << error;
+                        runtime.push(0.f);
+                        return;
+                    }
 
                     if (from.getContainerStore()) // is the object contained?
                     {
@@ -122,50 +113,7 @@ namespace MWScript
                     Interpreter::Type_Float scale = runtime[0].mFloat;
                     runtime.pop();
 
-                    /*
-                        Start of tes3mp addition
-
-                        Prevent players from changing their own scale
-
-                        Send an ID_OBJECT_SCALE every time an object's scale is changed through a script
-                    */
-                    if (ptr == MWMechanics::getPlayer())
-                    {
-                        MWBase::Environment::get().getWindowManager()->
-                            messageBox("You can't change your own scale in multiplayer. Only the server can.");
-                    }
-                    else if (mwmp::Main::get().getLocalPlayer()->isLoggedIn() && ptr.isInCell() && ptr.getCellRef().getScale() != scale)
-                    {
-                        // Ignore attempts to change another player's scale
-                        if (mwmp::PlayerList::isDedicatedPlayer(ptr))
-                        {
-                            MWBase::Environment::get().getWindowManager()->
-                                messageBox("You can't change the scales of other players. Only the server can.");
-                        }
-                        else
-                        {
-                            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                            objectList->reset();
-                            objectList->packetOrigin = ScriptController::getPacketOriginFromContextType(runtime.getContext().getContextType());
-                            objectList->originClientScript = runtime.getContext().getCurrentScriptName();
-                            objectList->addObjectScale(ptr, scale);
-                            objectList->sendObjectScale();
-                        }
-                    }
-                    /*
-                        End of tes3mp addition
-                    */
-
-                    /*
-                        Start of tes3mp change (major)
-
-                        Disable unilateral scaling on this client and expect the server's reply to our
-                        packet to do it instead
-                    */
-                    //MWBase::Environment::get().getWorld()->scaleObject(ptr,scale);
-                    /*
-                        End of tes3mp change (major)
-                    */
+                    MWBase::Environment::get().getWorld()->scaleObject(ptr,scale);
                 }
         };
 
@@ -219,17 +167,17 @@ namespace MWScript
                     // XYZ axis use the inverse (XYZ) rotation order like vanilla SetAngle.
                     // UWV axis use the standard (ZYX) rotation order like TESCS/OpenMW-CS and the rest of the game.
                     if (axis == "x")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,angle,ay,az,MWBase::RotationFlag_inverseOrder);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(angle,ay,az),MWBase::RotationFlag_inverseOrder);
                     else if (axis == "y")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,angle,az,MWBase::RotationFlag_inverseOrder);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(ax,angle,az),MWBase::RotationFlag_inverseOrder);
                     else if (axis == "z")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay,angle,MWBase::RotationFlag_inverseOrder);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(ax,ay,angle),MWBase::RotationFlag_inverseOrder);
                     else if (axis == "u")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,angle,ay,az,MWBase::RotationFlag_none);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(angle,ay,az),MWBase::RotationFlag_none);
                     else if (axis == "w")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,angle,az,MWBase::RotationFlag_none);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(ax,angle,az),MWBase::RotationFlag_none);
                     else if (axis == "v")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay,angle,MWBase::RotationFlag_none);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,osg::Vec3f(ax,ay,angle),MWBase::RotationFlag_none);
                 }
         };
 
@@ -364,7 +312,7 @@ namespace MWScript
                     }
 
                     dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(ptr,
-                        MWBase::Environment::get().getWorld()->moveObjectBy(ptr, newPos - curPos, true, true));
+                        MWBase::Environment::get().getWorld()->moveObject(ptr, newPos, true, true));
                 }
         };
 
@@ -407,7 +355,8 @@ namespace MWScript
                     if (ptr.getContainerStore())
                         return;
 
-                    if (ptr == MWMechanics::getPlayer())
+                    bool isPlayer = ptr == MWMechanics::getPlayer();
+                    if (isPlayer)
                     {
                         MWBase::Environment::get().getWorld()->getPlayer().setTeleported(true);
                     }
@@ -430,74 +379,36 @@ namespace MWScript
                     }
                     catch(std::exception&)
                     {
-                        // cell not found, move to exterior instead (vanilla PositionCell compatibility)
+                        // cell not found, move to exterior instead if moving the player (vanilla PositionCell compatibility)
                         const ESM::Cell* cell = MWBase::Environment::get().getWorld()->getExterior(cellID);
+                        if(!cell)
+                        {
+                            std::string error = "Warning: PositionCell: unknown interior cell (" + cellID + ")";
+                            if(isPlayer)
+                                error += ", moving to exterior instead";
+                            runtime.getContext().report (error);
+                            Log(Debug::Warning) << error;
+                            if(!isPlayer)
+                                return;
+                        }
                         int cx,cy;
                         MWBase::Environment::get().getWorld()->positionToIndex(x,y,cx,cy);
                         store = MWBase::Environment::get().getWorld()->getExterior(cx,cy);
-                        if(!cell)
-                        {
-                            std::string error = "Warning: PositionCell: unknown interior cell (" + cellID + "), moving to exterior instead";
-                            runtime.getContext().report (error);
-                            Log(Debug::Warning) << error;
-                        }
                     }
                     if(store)
                     {
-                        /*
-                            Start of tes3mp addition
-
-                            Track the original cell of this object in case we need to use it when sending a packet
-                        */
-                        ESM::Cell originalCell = *ptr.getCell()->getCell();
-                        /*
-                            End of tes3mp addition
-                        */
-
                         MWWorld::Ptr base = ptr;
-                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr,store,x,y,z);
+                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr,store,osg::Vec3f(x,y,z));
                         dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(base,ptr);
 
-                        /*
-                            Start of tes3mp addition
-
-                            Send ActorCellChange packets when actors are moved here, regardless of whether we're
-                            the cell authority or not; the server can decide if it wants to comply with them
-                        */
-                        if (ptr.getClass().isActor() && !mwmp::Main::get().getCellController()->isSameCell(originalCell, *store->getCell()))
-                        {
-                            mwmp::BaseActor baseActor;
-                            baseActor.refNum = ptr.getCellRef().getRefNum().mIndex;
-                            baseActor.mpNum = ptr.getCellRef().getMpNum();
-                            baseActor.cell = *store->getCell();
-                            baseActor.position = ptr.getRefData().getPosition();
-                            baseActor.isFollowerCellChange = true;
-
-                            mwmp::ActorList* actorList = mwmp::Main::get().getNetworking()->getActorList();
-                            actorList->reset();
-                            actorList->cell = originalCell;
-
-                            LOG_MESSAGE_SIMPLE(TimedLog::LOG_INFO, "Sending ID_ACTOR_CELL_CHANGE about %s %i-%i to server",
-                                ptr.getCellRef().getRefId().c_str(), baseActor.refNum, baseActor.mpNum);
-
-                            LOG_APPEND(TimedLog::LOG_INFO, "- Moved from %s to %s", actorList->cell.getDescription().c_str(),
-                                baseActor.cell.getDescription().c_str());
-
-                            actorList->addCellChangeActor(baseActor);
-                            actorList->sendCellChangeActors();
-                        }
-                        /*
-                            End of tes3mp addition
-                        */
-
-                        float ax = ptr.getRefData().getPosition().rot[0];
-                        float ay = ptr.getRefData().getPosition().rot[1];
+                        auto rot = ptr.getRefData().getPosition().asRotationVec3();
                         // Note that you must specify ZRot in minutes (1 degree = 60 minutes; north = 0, east = 5400, south = 10800, west = 16200)
                         // except for when you position the player, then degrees must be used.
                         // See "Morrowind Scripting for Dummies (9th Edition)" pages 50 and 54 for reference.
-                        if(ptr != MWMechanics::getPlayer())
+                        if(!isPlayer)
                             zRot = zRot/60.0f;
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay,osg::DegreesToRadians(zRot));
+                        rot.z() = osg::DegreesToRadians(zRot);
+                        MWBase::Environment::get().getWorld()->rotateObject(ptr,rot);
 
                         ptr.getClass().adjustPosition(ptr, false);
                     }
@@ -538,22 +449,22 @@ namespace MWScript
                     if (ptr == MWMechanics::getPlayer())
                     {
                         MWWorld::CellStore* cell = MWBase::Environment::get().getWorld()->getExterior(cx,cy);
-                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr,cell,x,y,z);
+                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr, cell, osg::Vec3(x, y, z));
                     }
                     else
                     {
-                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr, x, y, z, true, true);
+                        ptr = MWBase::Environment::get().getWorld()->moveObject(ptr, osg::Vec3f(x, y, z), true, true);
                     }
                     dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(base,ptr);
 
-                    float ax = ptr.getRefData().getPosition().rot[0];
-                    float ay = ptr.getRefData().getPosition().rot[1];
+                    auto rot = ptr.getRefData().getPosition().asRotationVec3();
                     // Note that you must specify ZRot in minutes (1 degree = 60 minutes; north = 0, east = 5400, south = 10800, west = 16200)
                     // except for when you position the player, then degrees must be used.
                     // See "Morrowind Scripting for Dummies (9th Edition)" pages 50 and 54 for reference.
                     if(ptr != MWMechanics::getPlayer())
                         zRot = zRot/60.0f;
-                    MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay,osg::DegreesToRadians(zRot));
+                    rot.z() = osg::DegreesToRadians(zRot);
+                    MWBase::Environment::get().getWorld()->rotateObject(ptr,rot);
                     ptr.getClass().adjustPosition(ptr, false);
                 }
         };
@@ -604,48 +515,10 @@ namespace MWScript
                         pos.rot[0] = pos.rot[1] = 0;
                         pos.rot[2] = osg::DegreesToRadians(zRotDegrees);
                         MWWorld::ManualRef ref(MWBase::Environment::get().getWorld()->getStore(),itemID);
+                        ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
                         ref.getPtr().getCellRef().setPosition(pos);
                         MWWorld::Ptr placed = MWBase::Environment::get().getWorld()->placeObject(ref.getPtr(),store,pos);
                         placed.getClass().adjustPosition(placed, true);
-
-                        /*
-                            Start of tes3mp addition
-
-                            Send an ID_OBJECT_PLACE or ID_OBJECT_SPAWN packet every time an object is placed
-                            in the world through a script
-                        */
-                        if (mwmp::Main::get().getLocalPlayer()->isLoggedIn())
-                        {
-                            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                            objectList->reset();
-                            objectList->packetOrigin = ScriptController::getPacketOriginFromContextType(runtime.getContext().getContextType());
-                            objectList->originClientScript = runtime.getContext().getCurrentScriptName();
-
-                            if (placed.getClass().isActor())
-                            {
-                                objectList->addObjectSpawn(placed);
-                                objectList->sendObjectSpawn();
-                            }
-                            else
-                            {
-                                objectList->addObjectPlace(placed);
-                                objectList->sendObjectPlace();
-                            }
-                        }
-                        /*
-                            End of tes3mp addition
-                        */
-
-                        /*
-                            Start of tes3mp change (major)
-
-                            Instead of actually keeping this object as is, delete it after sending the packet
-                            and wait for the server to send it back with a unique mpNum of its own
-                        */
-                        MWBase::Environment::get().getWorld()->deleteObject(placed);
-                        /*
-                            End of tes3mp change (major)
-                        */
                     }
                 }
         };
@@ -690,48 +563,10 @@ namespace MWScript
                     pos.rot[0] = pos.rot[1] = 0;
                     pos.rot[2] = osg::DegreesToRadians(zRotDegrees);
                     MWWorld::ManualRef ref(MWBase::Environment::get().getWorld()->getStore(),itemID);
+                    ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
                     ref.getPtr().getCellRef().setPosition(pos);
                     MWWorld::Ptr placed = MWBase::Environment::get().getWorld()->placeObject(ref.getPtr(),store,pos);
                     placed.getClass().adjustPosition(placed, true);
-
-                    /*
-                        Start of tes3mp addition
-
-                        Send an ID_OBJECT_PLACE or ID_OBJECT_SPAWN packet every time an object is placed
-                        in the world through a script
-                    */
-                    if (mwmp::Main::get().getLocalPlayer()->isLoggedIn())
-                    {
-                        mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                        objectList->reset();
-                        objectList->packetOrigin = ScriptController::getPacketOriginFromContextType(runtime.getContext().getContextType());
-                        objectList->originClientScript = runtime.getContext().getCurrentScriptName();
-
-                        if (placed.getClass().isActor())
-                        {
-                            objectList->addObjectSpawn(placed);
-                            objectList->sendObjectSpawn();
-                        }
-                        else
-                        {
-                            objectList->addObjectPlace(placed);
-                            objectList->sendObjectPlace();
-                        }
-                    }
-                    /*
-                        End of tes3mp addition
-                    */
-
-                    /*
-                        Start of tes3mp change (major)
-
-                        Instead of actually keeping this object as is, delete it after sending the packet
-                        and wait for the server to send it back with a unique mpNum of its own
-                    */
-                    MWBase::Environment::get().getWorld()->deleteObject(placed);
-                    /*
-                        End of tes3mp change (major)
-                    */
                 }
         };
 
@@ -769,48 +604,10 @@ namespace MWScript
                     {
                         // create item
                         MWWorld::ManualRef ref(MWBase::Environment::get().getWorld()->getStore(), itemID, 1);
+                        ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
 
                         MWWorld::Ptr ptr = MWBase::Environment::get().getWorld()->safePlaceObject(ref.getPtr(), actor, actor.getCell(), direction, distance);
                         MWBase::Environment::get().getWorld()->scaleObject(ptr, actor.getCellRef().getScale());
-
-                        /*
-                            Start of tes3mp addition
-
-                            Send an ID_OBJECT_PLACE or ID_OBJECT_SPAWN packet every time an object is placed
-                            in the world through a script
-                        */
-                        if (mwmp::Main::get().getLocalPlayer()->isLoggedIn())
-                        {
-                            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                            objectList->reset();
-                            objectList->packetOrigin = ScriptController::getPacketOriginFromContextType(runtime.getContext().getContextType());
-                            objectList->originClientScript = runtime.getContext().getCurrentScriptName();
-
-                            if (ptr.getClass().isActor())
-                            {
-                                objectList->addObjectSpawn(ptr);
-                                objectList->sendObjectSpawn();
-                            }
-                            else
-                            {
-                                objectList->addObjectPlace(ptr);
-                                objectList->sendObjectPlace();
-                            }
-                        }
-                        /*
-                            End of tes3mp addition
-                        */
-
-                        /*
-                            Start of tes3mp change (major)
-
-                            Instead of actually keeping this object as is, delete it after sending the packet
-                            and wait for the server to send it back with a unique mpNum of its own
-                        */
-                        MWBase::Environment::get().getWorld()->deleteObject(ptr);
-                        /*
-                            End of tes3mp change (major)
-                        */
                     }
                 }
         };
@@ -829,16 +626,15 @@ namespace MWScript
                     Interpreter::Type_Float rotation = osg::DegreesToRadians(runtime[0].mFloat*MWBase::Environment::get().getFrameDuration());
                     runtime.pop();
 
-                    float ax = ptr.getRefData().getPosition().rot[0];
-                    float ay = ptr.getRefData().getPosition().rot[1];
-                    float az = ptr.getRefData().getPosition().rot[2];
-
-                    if (axis == "x")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax+rotation,ay,az);
+                    auto rot = ptr.getRefData().getPosition().asRotationVec3();
+                    // Regardless of the axis argument, the player may only be rotated on Z
+                    if (axis == "z" || MWMechanics::getPlayer() == ptr)
+                        rot.z() += rotation;
+                    else if (axis == "x")
+                        rot.x() += rotation;
                     else if (axis == "y")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay+rotation,az);
-                    else if (axis == "z")
-                        MWBase::Environment::get().getWorld()->rotateObject(ptr,ax,ay,az+rotation);
+                        rot.y() += rotation;
+                    MWBase::Environment::get().getWorld()->rotateObject(ptr,rot);
                 }
         };
 
@@ -890,15 +686,11 @@ namespace MWScript
                     if (!ptr.isInCell())
                         return;
 
-                    float xr = ptr.getCellRef().getPosition().rot[0];
-                    float yr = ptr.getCellRef().getPosition().rot[1];
-                    float zr = ptr.getCellRef().getPosition().rot[2];
-
-                    MWBase::Environment::get().getWorld()->rotateObject(ptr, xr, yr, zr);
+                    MWBase::Environment::get().getWorld()->rotateObject(ptr, ptr.getCellRef().getPosition().asRotationVec3());
 
                     dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(ptr,
-                        MWBase::Environment::get().getWorld()->moveObject(ptr, ptr.getCellRef().getPosition().pos[0],
-                            ptr.getCellRef().getPosition().pos[1], ptr.getCellRef().getPosition().pos[2]));
+                        MWBase::Environment::get().getWorld()->moveObject(ptr, ptr.getCellRef().getPosition().asVec3()));
+
                 }
         };
 
@@ -945,7 +737,7 @@ namespace MWScript
                     // This approach can be used to create elevators.
                     moveStandingActors(ptr, diff);
                     dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(ptr,
-                        MWBase::Environment::get().getWorld()->moveObjectBy(ptr, diff, false, true));
+                        MWBase::Environment::get().getWorld()->moveObjectBy(ptr, diff));
                 }
         };
 
@@ -981,7 +773,7 @@ namespace MWScript
                     // This approach can be used to create elevators.
                     moveStandingActors(ptr, diff);
                     dynamic_cast<MWScript::InterpreterContext&>(runtime.getContext()).updatePtr(ptr,
-                        MWBase::Environment::get().getWorld()->moveObjectBy(ptr, diff, false, true));
+                        MWBase::Environment::get().getWorld()->moveObjectBy(ptr, diff));
                 }
         };
 
@@ -1007,47 +799,47 @@ namespace MWScript
 
         void installOpcodes (Interpreter::Interpreter& interpreter)
         {
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetDistance, new OpGetDistance<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetDistanceExplicit, new OpGetDistance<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetScale,new OpSetScale<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetScaleExplicit,new OpSetScale<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetAngle,new OpSetAngle<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetAngleExplicit,new OpSetAngle<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetScale,new OpGetScale<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetScaleExplicit,new OpGetScale<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetAngle,new OpGetAngle<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetAngleExplicit,new OpGetAngle<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetPos,new OpGetPos<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetPosExplicit,new OpGetPos<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetPos,new OpSetPos<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetPosExplicit,new OpSetPos<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetStartingPos,new OpGetStartingPos<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetStartingPosExplicit,new OpGetStartingPos<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePosition,new OpPosition<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePositionExplicit,new OpPosition<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePositionCell,new OpPositionCell<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePositionCellExplicit,new OpPositionCell<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePlaceItemCell,new OpPlaceItemCell);
-            interpreter.installSegment5(Compiler::Transformation::opcodePlaceItem,new OpPlaceItem);
-            interpreter.installSegment5(Compiler::Transformation::opcodePlaceAtPc,new OpPlaceAt<ImplicitRef, true>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePlaceAtMe,new OpPlaceAt<ImplicitRef, false>);
-            interpreter.installSegment5(Compiler::Transformation::opcodePlaceAtMeExplicit,new OpPlaceAt<ExplicitRef, false>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeModScale,new OpModScale<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeModScaleExplicit,new OpModScale<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeRotate,new OpRotate<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeRotateExplicit,new OpRotate<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeRotateWorld,new OpRotateWorld<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeRotateWorldExplicit,new OpRotateWorld<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetAtStart,new OpSetAtStart<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeSetAtStartExplicit,new OpSetAtStart<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeMove,new OpMove<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeMoveExplicit,new OpMove<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeMoveWorld,new OpMoveWorld<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeMoveWorldExplicit,new OpMoveWorld<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetStartingAngle, new OpGetStartingAngle<ImplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeGetStartingAngleExplicit, new OpGetStartingAngle<ExplicitRef>);
-            interpreter.installSegment5(Compiler::Transformation::opcodeResetActors, new OpResetActors);
-            interpreter.installSegment5(Compiler::Transformation::opcodeFixme, new OpFixme);
+            interpreter.installSegment5<OpGetDistance<ImplicitRef>>(Compiler::Transformation::opcodeGetDistance);
+            interpreter.installSegment5<OpGetDistance<ExplicitRef>>(Compiler::Transformation::opcodeGetDistanceExplicit);
+            interpreter.installSegment5<OpSetScale<ImplicitRef>>(Compiler::Transformation::opcodeSetScale);
+            interpreter.installSegment5<OpSetScale<ExplicitRef>>(Compiler::Transformation::opcodeSetScaleExplicit);
+            interpreter.installSegment5<OpSetAngle<ImplicitRef>>(Compiler::Transformation::opcodeSetAngle);
+            interpreter.installSegment5<OpSetAngle<ExplicitRef>>(Compiler::Transformation::opcodeSetAngleExplicit);
+            interpreter.installSegment5<OpGetScale<ImplicitRef>>(Compiler::Transformation::opcodeGetScale);
+            interpreter.installSegment5<OpGetScale<ExplicitRef>>(Compiler::Transformation::opcodeGetScaleExplicit);
+            interpreter.installSegment5<OpGetAngle<ImplicitRef>>(Compiler::Transformation::opcodeGetAngle);
+            interpreter.installSegment5<OpGetAngle<ExplicitRef>>(Compiler::Transformation::opcodeGetAngleExplicit);
+            interpreter.installSegment5<OpGetPos<ImplicitRef>>(Compiler::Transformation::opcodeGetPos);
+            interpreter.installSegment5<OpGetPos<ExplicitRef>>(Compiler::Transformation::opcodeGetPosExplicit);
+            interpreter.installSegment5<OpSetPos<ImplicitRef>>(Compiler::Transformation::opcodeSetPos);
+            interpreter.installSegment5<OpSetPos<ExplicitRef>>(Compiler::Transformation::opcodeSetPosExplicit);
+            interpreter.installSegment5<OpGetStartingPos<ImplicitRef>>(Compiler::Transformation::opcodeGetStartingPos);
+            interpreter.installSegment5<OpGetStartingPos<ExplicitRef>>(Compiler::Transformation::opcodeGetStartingPosExplicit);
+            interpreter.installSegment5<OpPosition<ImplicitRef>>(Compiler::Transformation::opcodePosition);
+            interpreter.installSegment5<OpPosition<ExplicitRef>>(Compiler::Transformation::opcodePositionExplicit);
+            interpreter.installSegment5<OpPositionCell<ImplicitRef>>(Compiler::Transformation::opcodePositionCell);
+            interpreter.installSegment5<OpPositionCell<ExplicitRef>>(Compiler::Transformation::opcodePositionCellExplicit);
+            interpreter.installSegment5<OpPlaceItemCell>(Compiler::Transformation::opcodePlaceItemCell);
+            interpreter.installSegment5<OpPlaceItem>(Compiler::Transformation::opcodePlaceItem);
+            interpreter.installSegment5<OpPlaceAt<ImplicitRef, true>>(Compiler::Transformation::opcodePlaceAtPc);
+            interpreter.installSegment5<OpPlaceAt<ImplicitRef, false>>(Compiler::Transformation::opcodePlaceAtMe);
+            interpreter.installSegment5<OpPlaceAt<ExplicitRef, false>>(Compiler::Transformation::opcodePlaceAtMeExplicit);
+            interpreter.installSegment5<OpModScale<ImplicitRef>>(Compiler::Transformation::opcodeModScale);
+            interpreter.installSegment5<OpModScale<ExplicitRef>>(Compiler::Transformation::opcodeModScaleExplicit);
+            interpreter.installSegment5<OpRotate<ImplicitRef>>(Compiler::Transformation::opcodeRotate);
+            interpreter.installSegment5<OpRotate<ExplicitRef>>(Compiler::Transformation::opcodeRotateExplicit);
+            interpreter.installSegment5<OpRotateWorld<ImplicitRef>>(Compiler::Transformation::opcodeRotateWorld);
+            interpreter.installSegment5<OpRotateWorld<ExplicitRef>>(Compiler::Transformation::opcodeRotateWorldExplicit);
+            interpreter.installSegment5<OpSetAtStart<ImplicitRef>>(Compiler::Transformation::opcodeSetAtStart);
+            interpreter.installSegment5<OpSetAtStart<ExplicitRef>>(Compiler::Transformation::opcodeSetAtStartExplicit);
+            interpreter.installSegment5<OpMove<ImplicitRef>>(Compiler::Transformation::opcodeMove);
+            interpreter.installSegment5<OpMove<ExplicitRef>>(Compiler::Transformation::opcodeMoveExplicit);
+            interpreter.installSegment5<OpMoveWorld<ImplicitRef>>(Compiler::Transformation::opcodeMoveWorld);
+            interpreter.installSegment5<OpMoveWorld<ExplicitRef>>(Compiler::Transformation::opcodeMoveWorldExplicit);
+            interpreter.installSegment5<OpGetStartingAngle<ImplicitRef>>(Compiler::Transformation::opcodeGetStartingAngle);
+            interpreter.installSegment5<OpGetStartingAngle<ExplicitRef>>(Compiler::Transformation::opcodeGetStartingAngleExplicit);
+            interpreter.installSegment5<OpResetActors>(Compiler::Transformation::opcodeResetActors);
+            interpreter.installSegment5<OpFixme>(Compiler::Transformation::opcodeFixme);
         }
     }
 }

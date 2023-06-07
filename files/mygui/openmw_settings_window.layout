@@ -443,7 +443,7 @@
                             </Widget>
                             <Widget type="HBox" skin="" position="4 56 350 24">
                                 <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 115 24" align="Left Top" name="WaterReflectionDetail">
-                                    <Property key="AddItem" value="Off"/>
+                                    <Property key="AddItem" value="Sky"/>
                                     <Property key="AddItem" value="Terrain"/>
                                     <Property key="AddItem" value="World"/>
                                     <Property key="AddItem" value="Objects"/>
@@ -452,6 +452,16 @@
                                 </Widget>
                                 <Widget type="AutoSizedTextBox" skin="SandText" position="64 4 90 16" align="Left Top">
                                     <Property key="Caption" value="Reflection shader detail"/>
+                                </Widget>
+                            </Widget>
+                            <Widget type="HBox" skin="" position="4 84 350 24">
+                                <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 115 24" align="Left Top" name="WaterRainRippleDetail">
+                                    <Property key="AddItem" value="Simple"/>
+                                    <Property key="AddItem" value="Sparse"/>
+                                    <Property key="AddItem" value="Dense"/>
+                                </Widget>
+                                <Widget type="AutoSizedTextBox" skin="SandText" position="64 4 90 16" align="Left Top">
+                                    <Property key="Caption" value="Rain ripple detail/density"/>
                                 </Widget>
                             </Widget>
                         </Widget>
@@ -644,6 +654,26 @@
                         </Widget>
                     </Widget>
                     -->
+                </Widget>
+            </Widget>
+            <Widget type="TabItem" skin="" position="4 32 360 308">
+                <Property key="Caption" value="  Scripts  "/>
+                <Widget name="ScriptFilter" type="EditBox" skin="MW_TextEdit" position="0 0 150 40"/>
+                <Widget name="ScriptList" type="ListBox" skin="MW_List" position="0 40 150 268"/>
+                <Widget name="ScriptBox" type="Widget" skin="MW_Box" position="150 0 250 250" name="ScriptBox">
+                    <Widget name="ScriptView" type="ScrollView" skin="MW_ScrollViewVH" position="2 2 246 246" align="Stretch">
+                        <Property key="CanvasAlign" value="Left Top"/>
+                        <Property key="CanvasSize" value="246 246"/>
+                        <Widget name="ScriptAdapter" type="LuaAdapter" position="0 0 246 246"/>
+                    </Widget>
+                </Widget>
+                <Widget name="ScriptDisabled" type="EditBox" skin="SandText" position="0 0 360 308" align="Center">
+                    <Property key="Visible" value="false"/>
+                    <Property key="Caption" value="Scripts settings are only available when a game is loaded."/>
+                    <Property key="TextAlign" value="Center" />
+                    <Property key="MultiLine" value="true" />
+                    <Property key="WordWrap" value="true" />
+                    <Property key="Static" value="true"/>
                 </Widget>
             </Widget>
         </Widget>

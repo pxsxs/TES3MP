@@ -2,26 +2,9 @@
 
 #include <components/misc/rng.hpp>
 #include <components/debug/debuglog.hpp>
-#include <components/esm/loadcrea.hpp>
-#include <components/esm/creaturestate.hpp>
+#include <components/esm3/loadcrea.hpp>
+#include <components/esm3/creaturestate.hpp>
 #include <components/settings/settings.hpp>
-
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/PlayerList.hpp"
-#include "../mwmp/ObjectList.hpp"
-#include "../mwmp/CellController.hpp"
-#include "../mwmp/MechanicsHelper.hpp"
-/*
-    End of tes3mp addition
-*/
 
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/magiceffects.hpp"
@@ -97,12 +80,13 @@ namespace MWClass
 
     const Creature::GMST& Creature::getGmst()
     {
-        static GMST gmst;
-        static bool inited = false;
-        if (!inited)
+        static const GMST staticGmst = []
         {
+            GMST gmst;
+
             const MWBase::World *world = MWBase::Environment::get().getWorld();
             const MWWorld::Store<ESM::GameSetting> &store = world->getStore().get<ESM::GameSetting>();
+
             gmst.fMinWalkSpeedCreature = store.find("fMinWalkSpeedCreature");
             gmst.fMaxWalkSpeedCreature = store.find("fMaxWalkSpeedCreature");
             gmst.fEncumberedMoveEffect = store.find("fEncumberedMoveEffect");
@@ -116,16 +100,20 @@ namespace MWClass
             gmst.fKnockDownMult = store.find("fKnockDownMult");
             gmst.iKnockDownOddsMult = store.find("iKnockDownOddsMult");
             gmst.iKnockDownOddsBase = store.find("iKnockDownOddsBase");
-            inited = true;
-        }
-        return gmst;
+
+            return gmst;
+        } ();
+        return staticGmst;
     }
 
     void Creature::ensureCustomData (const MWWorld::Ptr& ptr) const
     {
         if (!ptr.getRefData().getCustomData())
         {
-            std::unique_ptr<CreatureCustomData> data (new CreatureCustomData);
+            auto tempData = std::make_unique<CreatureCustomData>();
+            CreatureCustomData* data = tempData.get();
+            MWMechanics::CreatureCustomDataResetter resetter(ptr);
+            ptr.getRefData().setCustomData(std::move(tempData));
 
             MWWorld::LiveCellRef<ESM::Creature> *ref = ptr.get<ESM::Creature>();
 
@@ -169,10 +157,7 @@ namespace MWClass
 
             data->mCreatureStats.setGoldPool(ref->mBase->mData.mGold);
 
-            data->mCreatureStats.setNeedRecalcDynamicStats(false);
-
-            // store
-            ptr.getRefData().setCustomData(std::move(data));
+            resetter.mPtr = {};
 
             getContainerStore(ptr).fill(ref->mBase->mInventory, ptr.getCellRef().getRefId());
 
@@ -239,19 +224,6 @@ namespace MWClass
 
     void Creature::hit(const MWWorld::Ptr& ptr, float attackStrength, int type) const
     {
-        /*
-            Start of tes3mp addition
-
-            Ignore hit calculations on this client from DedicatedPlayers and DedicatedActors
-        */
-        if (mwmp::PlayerList::isDedicatedPlayer(ptr) || mwmp::Main::get().getCellController()->isDedicatedActor(ptr))
-        {
-            return;
-        }
-        /*
-            End of tes3mp addition
-        */
-
         MWWorld::LiveCellRef<ESM::Creature> *ref =
             ptr.get<ESM::Creature>();
         const MWWorld::Store<ESM::GameSetting> &gmst = MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>();
@@ -266,7 +238,7 @@ namespace MWClass
         {
             MWWorld::InventoryStore &inv = getInventoryStore(ptr);
             MWWorld::ContainerStoreIterator weaponslot = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
-            if (weaponslot != inv.end() && weaponslot->getTypeName() == typeid(ESM::Weapon).name())
+            if (weaponslot != inv.end() && weaponslot->getType() == ESM::Weapon::sRecordId)
                 weapon = *weaponslot;
         }
 
@@ -286,74 +258,15 @@ namespace MWClass
 
         MWWorld::Ptr victim = result.first;
 
-        /*
-            Start of tes3mp change (major)
-
-            Send an ID_OBJECT_HIT packet when hitting non-actors instead of
-            just returning
-        */
         if (!victim.getClass().isActor())
-        {
-            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-            objectList->reset();
-            objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-            objectList->addObjectHit(victim, ptr);
-            objectList->sendObjectHit();
-            return;
-        }
-        /*
-            End of tes3mp change (major)
-        */
+            return; // Can't hit non-actors
 
         osg::Vec3f hitPosition (result.second);
 
         float hitchance = MWMechanics::getHitChance(ptr, victim, ref->mBase->mData.mCombat);
 
-        /*
-            Start of tes3mp addition
-
-            If the attacker is a LocalPlayer or LocalActor, get their Attack to assign its
-            hit position and target
-        */
-        mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(ptr);
-
-        if (localAttack)
-        {
-            localAttack->isHit = true;
-            localAttack->success = true;
-            localAttack->hitPosition = MechanicsHelper::getPositionFromVector(hitPosition);
-            MechanicsHelper::assignAttackTarget(localAttack, victim);
-        }
-        /*
-            End of tes3mp addition
-        */
-
         if(Misc::Rng::roll0to99() >= hitchance)
         {
-            /*
-                Start of tes3mp addition
-
-                If this was a failed attack by the LocalPlayer or LocalActor, send a
-                packet about it
-
-                Send an ID_OBJECT_HIT about it as well
-            */
-            if (localAttack)
-            {
-                localAttack->pressed = false;
-                localAttack->success = false;
-                localAttack->shouldSend = true;
-
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-                objectList->addObjectHit(victim, ptr, *localAttack);
-                objectList->sendObjectHit();
-            }
-            /*
-                End of tes3mp addition
-            */
-
             victim.getClass().onHit(victim, 0.0f, false, MWWorld::Ptr(), ptr, osg::Vec3f(), false);
             MWMechanics::reduceWeaponCondition(0.f, false, weapon, ptr);
             return;
@@ -397,20 +310,7 @@ namespace MWClass
             }
 
             // Apply "On hit" enchanted weapons
-
-            /*
-                Start of tes3mp change (minor)
-
-                Track whether the strike enchantment is successful for attacks by the
-                LocalPlayer or LocalActors
-            */
-            bool appliedEnchantment = MWMechanics::applyOnStrikeEnchantment(ptr, victim, weapon, hitPosition);
-
-            if (localAttack)
-                localAttack->applyWeaponEnchantment = appliedEnchantment;
-            /*
-                End of tes3mp change (minor)
-            */
+            MWMechanics::applyOnStrikeEnchantment(ptr, victim, weapon, hitPosition);
         }
         else if (isBipedal(ptr))
         {
@@ -446,36 +346,17 @@ namespace MWClass
         if (!attacker.isEmpty() && attacker.getClass().isActor())
         {
             MWMechanics::CreatureStats& statsAttacker = attacker.getClass().getCreatureStats(attacker);
-
-            /*
-                Start of tes3mp change (minor)
-
-                Instead of only checking whether an attacker is the LocalPlayer, also
-                check if they are a DedicatedPlayer
-
-                Additionally, if the two players are on each other's team, don't track
-                their hits
-            */
-
             // First handle the attacked actor
             if ((stats.getHitAttemptActorId() == -1)
                 && (statsAttacker.getAiSequence().isInCombat(ptr)
-                    || attacker == MWMechanics::getPlayer()
-                    || mwmp::PlayerList::isDedicatedPlayer(attacker))
-                && !MechanicsHelper::isTeamMember(attacker, ptr))
+                    || attacker == MWMechanics::getPlayer()))
                 stats.setHitAttemptActorId(statsAttacker.getActorId());
 
             // Next handle the attacking actor
             if ((statsAttacker.getHitAttemptActorId() == -1)
                 && (statsAttacker.getAiSequence().isInCombat(ptr)
-                    || attacker == MWMechanics::getPlayer()
-                    || mwmp::PlayerList::isDedicatedPlayer(attacker))
-                && !MechanicsHelper::isTeamMember(ptr, attacker))
+                    || attacker == MWMechanics::getPlayer()))
                 statsAttacker.setHitAttemptActorId(stats.getActorId());
-
-            /*
-                End of tes3mp change (minor)
-            */
         }
 
         if (!object.isEmpty())
@@ -510,39 +391,11 @@ namespace MWClass
                 // Check for knockdown
                 float agilityTerm = stats.getAttribute(ESM::Attribute::Agility).getModified() * getGmst().fKnockDownMult->mValue.getFloat();
                 float knockdownTerm = stats.getAttribute(ESM::Attribute::Agility).getModified()
-                    * getGmst().iKnockDownOddsMult->mValue.getInteger() * 0.01f + getGmst().iKnockDownOddsBase->mValue.getInteger();
-
-                /*
-                    Start of tes3mp change (major)
-
-                    If the attacker is a DedicatedPlayer or DedicatedActor with a successful knockdown, apply the knockdown
-
-                    If the attacker is neither of those, then it must be a LocalPlayer or a LocalActor, so calculate the
-                    knockdown probability on our client
-
-                    Default to hit recovery if no knockdown has taken place, like in regular OpenMW
-                */
-                mwmp::Attack *dedicatedAttack = MechanicsHelper::getDedicatedAttack(attacker);
-
-                if (dedicatedAttack)
-                {
-                    if (dedicatedAttack->knockdown)
-                        stats.setKnockedDown(true);
-                }
-
+                        * getGmst().iKnockDownOddsMult->mValue.getInteger() * 0.01f + getGmst().iKnockDownOddsBase->mValue.getInteger();
                 if (ishealth && agilityTerm <= damage && knockdownTerm <= Misc::Rng::roll0to99())
                     stats.setKnockedDown(true);
                 else
-                {
-                    if (ishealth && agilityTerm <= damage && knockdownTerm <= Misc::Rng::roll0to99())
-                        stats.setKnockedDown(true);
-                }
-
-                if (!stats.getKnockedDown())
                     stats.setHitRecovery(true); // Is this supposed to always occur?
-                /*
-                    End of tes3mp change (major)
-                */
             }
 
             if(ishealth)
@@ -568,46 +421,6 @@ namespace MWClass
                 stats.setFatigue(fatigue);
             }
         }
-
-        /*
-            Start of tes3mp addition
-
-            If the attacker was the LocalPlayer or LocalActor, record their target and send an
-            attack packet about it
-
-            Send an ID_OBJECT_HIT about it as well
-
-            If the victim was a LocalActor who died, record their attacker as the killer
-        */
-        mwmp::Attack *localAttack = MechanicsHelper::getLocalAttack(attacker);
-
-        if (localAttack)
-        {
-            localAttack->pressed = false;
-            localAttack->damage = damage;
-            localAttack->knockdown = getCreatureStats(ptr).getKnockedDown();
-
-            MechanicsHelper::assignAttackTarget(localAttack, ptr);
-
-            localAttack->shouldSend = true;
-
-            mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-            objectList->reset();
-            objectList->packetOrigin = mwmp::CLIENT_GAMEPLAY;
-            objectList->addObjectHit(ptr, attacker, *localAttack);
-            objectList->sendObjectHit();
-        }
-
-        if (mwmp::Main::get().getCellController()->isLocalActor(ptr))
-        {
-            if (getCreatureStats(ptr).isDead())
-            {
-                mwmp::Main::get().getCellController()->getLocalActor(ptr)->killer = MechanicsHelper::getTarget(attacker);
-            }
-        }
-        /*
-            End of tes3mp addition
-        */
     }
 
     std::shared_ptr<MWWorld::Action> Creature::activate (const MWWorld::Ptr& ptr,
@@ -684,7 +497,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Creature);
 
-        registerClass (typeid (ESM::Creature).name(), instance);
+        registerClass (ESM::Creature::sRecordId, instance);
     }
 
     float Creature::getMaxSpeed(const MWWorld::Ptr &ptr) const
@@ -777,7 +590,7 @@ namespace MWClass
     bool Creature::isPersistent(const MWWorld::ConstPtr &actor) const
     {
         const MWWorld::LiveCellRef<ESM::Creature>* ref = actor.get<ESM::Creature>();
-        return ref->mBase->mPersistent;
+        return (ref->mBase->mRecordFlags & ESM::FLAG_Persistent) != 0;
     }
 
     std::string Creature::getSoundIdFromSndGen(const MWWorld::Ptr &ptr, const std::string &name) const
@@ -937,26 +750,33 @@ namespace MWClass
         if (!state.mHasCustomState)
             return;
 
+        const ESM::CreatureState& creatureState = state.asCreatureState();
+
         if (state.mVersion > 0)
         {
             if (!ptr.getRefData().getCustomData())
             {
-                // Create a CustomData, but don't fill it from ESM records (not needed)
-                std::unique_ptr<CreatureCustomData> data (new CreatureCustomData);
-
-                if (hasInventoryStore(ptr))
-                    data->mContainerStore = std::make_unique<MWWorld::InventoryStore>();
+                if (creatureState.mCreatureStats.mMissingACDT)
+                    ensureCustomData(ptr);
                 else
-                    data->mContainerStore = std::make_unique<MWWorld::ContainerStore>();
+                {
+                    // Create a CustomData, but don't fill it from ESM records (not needed)
+                    std::unique_ptr<CreatureCustomData> data (new CreatureCustomData);
 
-                ptr.getRefData().setCustomData (std::move(data));
+                    if (hasInventoryStore(ptr))
+                        data->mContainerStore = std::make_unique<MWWorld::InventoryStore>();
+                    else
+                        data->mContainerStore = std::make_unique<MWWorld::ContainerStore>();
+
+                    ptr.getRefData().setCustomData (std::move(data));
+                }
             }
         }
         else
             ensureCustomData(ptr); // in openmw 0.30 savegames not all state was saved yet, so need to load it regardless.
 
         CreatureCustomData& customData = ptr.getRefData().getCustomData()->asCreatureCustomData();
-        const ESM::CreatureState& creatureState = state.asCreatureState();
+
         customData.mContainerStore->readState (creatureState.mInventory);
         bool spellsInitialised = customData.mCreatureStats.getSpells().setSpells(ptr.get<ESM::Creature>()->mBase->mId);
         if(spellsInitialised)
@@ -1019,12 +839,12 @@ namespace MWClass
                 }
 
                 MWBase::Environment::get().getWorld()->removeContainerScripts(ptr);
+                MWBase::Environment::get().getWindowManager()->onDeleteCustomData(ptr);
                 ptr.getRefData().setCustomData(nullptr);
 
                 // Reset to original position
-                MWBase::Environment::get().getWorld()->moveObject(ptr, ptr.getCellRef().getPosition().pos[0],
-                        ptr.getCellRef().getPosition().pos[1],
-                        ptr.getCellRef().getPosition().pos[2]);
+                MWBase::Environment::get().getWorld()->moveObject(ptr, ptr.getCellRef().getPosition().asVec3());
+                MWBase::Environment::get().getWorld()->rotateObject(ptr, ptr.getCellRef().getPosition().asRotationVec3(), MWBase::RotationFlag_none);
             }
         }
     }
@@ -1069,12 +889,8 @@ namespace MWClass
     float Creature::getSwimSpeed(const MWWorld::Ptr& ptr) const
     {
         const MWMechanics::CreatureStats& stats = getCreatureStats(ptr);
-        const GMST& gmst = getGmst();
         const MWMechanics::MagicEffects& mageffects = stats.getMagicEffects();
 
-        return getWalkSpeed(ptr)
-            * (1.0f + 0.01f * mageffects.get(ESM::MagicEffect::SwiftSwim).getMagnitude())
-            * (gmst.fSwimRunBase->mValue.getFloat()
-               + 0.01f * getSkill(ptr, ESM::Skill::Athletics) * gmst.fSwimRunAthleticsMult->mValue.getFloat());
+        return getSwimSpeedImpl(ptr, getGmst(), mageffects, getWalkSpeed(ptr));
     }
 }

@@ -19,11 +19,7 @@ namespace DetourNavigator
 
         void removeAgent(const osg::Vec3f& /*agentHalfExtents*/) override {}
 
-        bool addObject(const ObjectId /*id*/, const osg::ref_ptr<const osg::Object>& /*holder*/,
-            const btHeightfieldTerrainShape& /*shape*/, const btTransform& /*transform*/) override
-        {
-            return false;
-        }
+        void setWorldspace(std::string_view /*worldspace*/) override {}
 
         bool addObject(const ObjectId /*id*/, const ObjectShapes& /*shapes*/, const btTransform& /*transform*/) override
         {
@@ -50,13 +46,22 @@ namespace DetourNavigator
             return false;
         }
 
-        bool addWater(const osg::Vec2i& /*cellPosition*/, const int /*cellSize*/, const btScalar /*level*/,
-            const btTransform& /*transform*/) override
+        bool addWater(const osg::Vec2i& /*cellPosition*/, int /*cellSize*/, float /*level*/) override
         {
             return false;
         }
 
         bool removeWater(const osg::Vec2i& /*cellPosition*/) override
+        {
+            return false;
+        }
+
+        bool addHeightfield(const osg::Vec2i& /*cellPosition*/, int /*cellSize*/, const HeightfieldShape& /*height*/) override
+        {
+            return false;
+        }
+
+        bool removeHeightfield(const osg::Vec2i& /*cellPosition*/) override
         {
             return false;
         }
@@ -90,7 +95,7 @@ namespace DetourNavigator
 
         void reportStats(unsigned int /*frameNumber*/, osg::Stats& /*stats*/) const override {}
 
-        RecastMeshTiles getRecastMeshTiles() override
+        RecastMeshTiles getRecastMeshTiles() const override
         {
             return {};
         }

@@ -1,10 +1,11 @@
 #include "creaturelevlist.hpp"
 
-#include <components/esm/loadlevlist.hpp>
-#include <components/esm/creaturelevliststate.hpp>
+#include <components/esm3/loadlevlist.hpp>
+#include <components/esm3/creaturelevliststate.hpp>
 
 #include "../mwmechanics/levelledlist.hpp"
 
+#include "../mwworld/cellstore.hpp"
 #include "../mwworld/customdata.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 
@@ -27,6 +28,24 @@ namespace MWClass
         }
     };
 
+    MWWorld::Ptr CreatureLevList::copyToCellImpl(const MWWorld::ConstPtr &ptr, MWWorld::CellStore &cell) const
+    {
+        const MWWorld::LiveCellRef<ESM::CreatureLevList> *ref = ptr.get<ESM::CreatureLevList>();
+
+        return MWWorld::Ptr(cell.insert(ref), &cell);
+    }
+
+    void CreatureLevList::adjustPosition(const MWWorld::Ptr& ptr, bool force) const
+    {
+        if (ptr.getRefData().getCustomData() == nullptr)
+            return;
+
+        CreatureLevListCustomData& customData = ptr.getRefData().getCustomData()->asCreatureLevListCustomData();
+        MWWorld::Ptr creature = (customData.mSpawnActorId == -1) ? MWWorld::Ptr() : MWBase::Environment::get().getWorld()->searchPtrViaActorId(customData.mSpawnActorId);
+        if (!creature.isEmpty())
+            MWBase::Environment::get().getWorld()->adjustPosition(creature, force);
+    }
+
     std::string CreatureLevList::getName (const MWWorld::ConstPtr& ptr) const
     {
         return "";
@@ -45,7 +64,13 @@ namespace MWClass
         if (customData.mSpawn)
             return;
 
-        MWWorld::Ptr creature = (customData.mSpawnActorId == -1) ? MWWorld::Ptr() : MWBase::Environment::get().getWorld()->searchPtrViaActorId(customData.mSpawnActorId);
+        MWWorld::Ptr creature;
+        if(customData.mSpawnActorId != -1)
+        {
+            creature = MWBase::Environment::get().getWorld()->searchPtrViaActorId(customData.mSpawnActorId);
+            if(creature.isEmpty())
+                creature = ptr.getCell()->getMovedActor(customData.mSpawnActorId);
+        }
         if (!creature.isEmpty())
         {
             const MWMechanics::CreatureStats& creatureStats = creature.getClass().getCreatureStats(creature);
@@ -70,7 +95,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new CreatureLevList);
 
-        registerClass (typeid (ESM::CreatureLevList).name(), instance);
+        registerClass (ESM::CreatureLevList::sRecordId, instance);
     }
 
     void CreatureLevList::getModelsToPreload(const MWWorld::Ptr &ptr, std::vector<std::string> &models) const
@@ -118,20 +143,9 @@ namespace MWClass
             const MWWorld::ESMStore& store = MWBase::Environment::get().getWorld()->getStore();
             MWWorld::ManualRef manualRef(store, id);
             manualRef.getPtr().getCellRef().setPosition(ptr.getCellRef().getPosition());
-
-            /*
-                Start of tes3mp change (major)
-
-                Don't spawn leveled creatures in multiplayer; they'll be spawned when the server requests them
-            */
-            /*
             manualRef.getPtr().getCellRef().setScale(ptr.getCellRef().getScale());
             MWWorld::Ptr placed = MWBase::Environment::get().getWorld()->placeObject(manualRef.getPtr(), ptr.getCell() , ptr.getCellRef().getPosition());
             customData.mSpawnActorId = placed.getClass().getCreatureStats(placed).getActorId();
-            */
-            /*
-                End of tes3mp change (major)
-            */
             customData.mSpawn = false;
         }
         else

@@ -2,8 +2,16 @@
 #include "vismask.hpp"
 
 #include <components/sceneutil/agentpath.hpp>
+#include <components/resource/resourcesystem.hpp>
+#include <components/resource/scenemanager.hpp>
+#include <components/detournavigator/settings.hpp>
 
 #include <osg/PositionAttitudeTransform>
+
+#include "../mwbase/world.hpp"
+#include "../mwbase/environment.hpp"
+
+#include <algorithm>
 
 namespace MWRender
 {
@@ -40,9 +48,10 @@ namespace MWRender
         if (group != mGroups.end())
             mRootNode->removeChild(group->second);
 
-        const auto newGroup = SceneUtil::createAgentPathGroup(path, halfExtents, start, end, settings);
+        const auto newGroup = SceneUtil::createAgentPathGroup(path, halfExtents, start, end, settings.mRecast);
         if (newGroup)
         {
+            MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(newGroup, "debug");
             newGroup->setNodeMask(Mask_Debug);
             mRootNode->addChild(newGroup);
             mGroups[actor] = newGroup;

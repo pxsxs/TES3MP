@@ -281,8 +281,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>645</width>
-            <height>413</height>
+            <width>665</width>
+            <height>525</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -444,6 +444,26 @@
                 </property>
                </widget>
               </item>
+              <item row="3" column="0">
+               <widget class="QCheckBox" name="softParticlesCheckBox">
+                <property name="toolTip">
+                 <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enables soft particles for particle effects. This technique softens the intersection between individual particles and other opaque geometry by blending between them.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                </property>
+                <property name="text">
+                 <string>Soft Particles</string>
+                </property>
+               </widget>
+              </item>
+              <item row="3" column="1">
+               <widget class="QCheckBox" name="antialiasAlphaTestCheckBox">
+                <property name="toolTip">
+                 <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Allows MSAA to work with alpha-tested meshes, producing better-looking edges without pixelation. Can negatively impact performance.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                </property>
+                <property name="text">
+                 <string>Use anti-alias alpha testing</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </item>
@@ -533,6 +553,25 @@
                  </widget>
                 </item>
                </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="miscGroup">
+             <property name="title">
+              <string>Models</string>
+             </property>
+             <layout class="QGridLayout" name="miscLayout">
+              <item row="0" column="0">
+               <widget class="QCheckBox" name="nightDaySwitchesCheckBox">
+                <property name="toolTip">
+                  <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If this setting is true, supporting models will make use of day night switch nodes.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                </property>
+                <property name="text">
+                 <string>Day night switch nodes</string>
+                </property>
+               </widget>
               </item>
              </layout>
             </widget>
@@ -1007,6 +1046,16 @@ True: In non-combat mode camera is positioned behind the character's shoulder. C
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="useZoomOnMapCheckBox">
+         <property name="toolTip">
+          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable zooming on local and global maps.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         </property>
+         <property name="text">
+          <string>Can zoom on maps</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="graphicHerbalismCheckBox">
          <property name="toolTip">
           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If this setting is true, containers supporting graphic herbalism will do so instead of opening the menu.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
@@ -1121,7 +1170,7 @@ True: In non-combat mode camera is positioned behind the character's shoulder. C
          <layout class="QVBoxLayout" name="otherGroupVerticalLayout">
           <item>
            <layout class="QHBoxLayout" name="screenshotFormatLayout">
-            <item alignment="Qt::AlignRight">
+            <item>
              <widget class="QLabel" name="screenshotFormatLabel">
               <property name="text">
                <string>Screenshot Format</string>
@@ -1148,6 +1197,13 @@ True: In non-combat mode camera is positioned behind the character's shoulder. C
              </widget>
             </item>
            </layout>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="notifyOnSavedScreenshotCheckBox">
+            <property name="text">
+             <string>Notify on saved screenshot</string>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>

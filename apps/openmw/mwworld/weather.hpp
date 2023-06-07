@@ -1,7 +1,7 @@
 #ifndef GAME_MWWORLD_WEATHER_H
 #define GAME_MWWORLD_WEATHER_H
 
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 #include <map>
 
@@ -115,6 +115,8 @@ namespace MWWorld
     class Weather
     {
     public:
+        static osg::Vec3f defaultDirection();
+
         Weather(const std::string& name,
                 float stormWindSpeed,
                 float rainSpeed,
@@ -188,6 +190,8 @@ namespace MWWorld
         std::string mParticleEffect;
 
         std::string mRainEffect;
+
+        osg::Vec3f mStormDirection;
 
         // Note: For Weather Blight, there is a "Disease Chance" (=0.1) setting. But according to MWSFD this feature
         // is broken in the vanilla game and was disabled.
@@ -284,18 +288,6 @@ namespace MWWorld
         void modRegion(const std::string& regionID, const std::vector<char>& chances);
         void playerTeleported(const std::string& playerRegion, bool isExterior);
 
-        /*
-            Start of tes3mp addition
-
-            Make it possible to set a specific weather state for a region from elsewhere
-            in the code
-        */
-        void setRegionWeather(const std::string& region, const int currentWeather, const int nextWeather,
-            const int queuedWeather, const float transitionFactor, bool force);
-        /*
-            End of tes3mp addition
-        */
-
         /**
          * Per-frame update
          * @param duration
@@ -324,39 +316,6 @@ namespace MWWorld
         bool readRecord(ESM::ESMReader& reader, uint32_t type);
 
         void clear();
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to check whether the local WeatherManager has the
-            ability to create weather changes
-        */
-        bool getWeatherCreationState();
-        /*
-            End of tes3mp addition
-        */
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to enable and disable the local WeatherManager's ability
-            to create weather changes
-        */
-        void setWeatherCreationState(bool state);
-        /*
-            End of tes3mp addition
-        */
-
-        /*
-            Start of tes3mp addition
-
-            Make it possible to send the current weather in a WorldWeather packet
-            when requested from elsewhere in the code
-        */
-        void sendWeather();
-        /*
-            End of tes3mp addition
-        */
 
     private:
         MWWorld::ESMStore& mStore;
@@ -403,17 +362,6 @@ namespace MWWorld
 
         MWBase::Sound *mAmbientSound;
         std::string mPlayingSoundID;
-
-        /*
-            Start of tes3mp addition
-
-            Track whether the local WeatherManager should be creating any weather changes
-            by itself; when set to false, only weather changes sent by the server are used
-        */
-        bool mWeatherCreationState = false;
-        /*
-            End of tes3mp addition
-        */
 
         void addWeather(const std::string& name,
                         float dlFactor, float dlOffset,

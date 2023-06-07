@@ -7,20 +7,6 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "../mwmp/Main.hpp"
-#include "../mwmp/Networking.hpp"
-#include "../mwmp/LocalPlayer.hpp"
-#include "../mwmp/ObjectList.hpp"
-/*
-    End of tes3mp addition
-*/
-
 #include <components/compiler/exception.hpp>
 #include <components/compiler/extensions0.hpp>
 #include <components/compiler/lineparser.hpp>
@@ -34,6 +20,7 @@
 #include "../mwbase/scriptmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwbase/luamanager.hpp"
 
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/class.hpp"
@@ -209,36 +196,6 @@ namespace MWGui
             try
             {
                 ConsoleInterpreterContext interpreterContext (*this, mPtr);
-
-                /*
-                    Start of tes3mp addition
-
-                    Send an ID_CONSOLE_COMMAND packet to the server with the
-                    command and target used
-
-                    Mark this InterpreterContext as having a CONSOLE context,
-                    so that packets sent by the Interpreter can have their
-                    origin determined by serverside scripts
-                */
-                interpreterContext.trackContextType(Interpreter::Context::CONSOLE);
-
-                mwmp::ObjectList *objectList = mwmp::Main::get().getNetworking()->getObjectList();
-                objectList->reset();
-                objectList->packetOrigin = mwmp::CLIENT_CONSOLE;
-                objectList->consoleCommand = command;
-                
-                if (mPtr.isEmpty())
-                    objectList->cell = mwmp::Main::get().getLocalPlayer()->cell;
-                else
-                {
-                    objectList->addObjectGeneric(mPtr);
-                }
-
-                objectList->sendConsoleCommand();
-                /*
-                    End of tes3mp addition
-                */
-
                 Interpreter::Interpreter interpreter;
                 MWScript::installOpcodes (interpreter, mConsoleOnlyScripts);
                 std::vector<Interpreter::Type_Code> code;
@@ -537,18 +494,7 @@ namespace MWGui
             }
             else
             {
-                /*
-                    Start of tes3mp change (major)
-
-                    Display the selected object's refNum and mpNum alongside its refId in the
-                    title of the console window, for easier debugging of almost everything
-                */
-                setTitle("#{sConsoleTitle} (" + object.getCellRef().getRefId() + ", " +
-                    std::to_string(object.getCellRef().getRefNum().mIndex) + "-" +
-                    std::to_string(object.getCellRef().getMpNum()) + ")");
-                /*
-                    End of tes3mp change (major)
-                */
+                setTitle("#{sConsoleTitle} (" + object.getCellRef().getRefId() + ")");
                 mPtr = object;
             }
             // User clicked on an object. Restore focus to the console command line.
@@ -560,21 +506,6 @@ namespace MWGui
             mPtr = MWWorld::Ptr();
         }
     }
-
-    /*
-        Start of tes3mp addition
-
-        Allow the direct setting of a console's Ptr, without the assumption that an object
-        was clicked and that key focus should be restored to the console window, for console
-        commands executed via server scripts
-    */
-    void Console::setPtr(const MWWorld::Ptr& object)
-    {
-        mPtr = object;
-    }
-    /*
-        End of tes3mp addition
-    */
 
     void Console::onReferenceUnavailable()
     {

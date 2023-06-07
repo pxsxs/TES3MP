@@ -42,7 +42,8 @@ namespace MWClass
             void insertObjectRendering (const MWWorld::Ptr& ptr, const std::string& model, MWRender::RenderingInterface& renderingInterface) const override;
             ///< Add reference into a cell for rendering
 
-            void insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const override;
+            void insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const override;
+            void insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const override;
 
             std::string getName (const MWWorld::ConstPtr& ptr) const override;
             ///< \return name or ID; can return an empty string.
@@ -59,16 +60,6 @@ namespace MWClass
 
             MWWorld::ContainerStore& getContainerStore (const MWWorld::Ptr& ptr) const override;
             ///< Return container store
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to check whether a class has a container store
-            */
-            virtual bool hasContainerStore(const MWWorld::Ptr &ptr) const { return true; }
-            /*
-                End of tes3mp addition
-            */
 
             std::string getScript (const MWWorld::ConstPtr& ptr) const override;
             ///< Return name of the script attached to ptr

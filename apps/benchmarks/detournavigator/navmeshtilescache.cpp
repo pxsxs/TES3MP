@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include <components/detournavigator/navmeshtilescache.hpp>
+#include <components/esm3/loadland.hpp>
 
 #include <algorithm>
 #include <random>
@@ -15,20 +16,19 @@ namespace
         osg::Vec3f mAgentHalfExtents;
         TilePosition mTilePosition;
         RecastMesh mRecastMesh;
-        std::vector<OffMeshConnection> mOffMeshConnections;
     };
 
     struct Item
     {
         Key mKey;
-        NavMeshData mValue;
+        PreparedNavMeshData mValue;
     };
 
     template <typename Random>
-    TilePosition generateTilePosition(int max, Random& random)
+    osg::Vec2i generateVec2i(int max, Random& random)
     {
         std::uniform_int_distribution<int> distribution(0, max);
-        return TilePosition(distribution(random), distribution(random));
+        return osg::Vec2i(distribution(random), distribution(random));
     }
 
     template <typename Random>
@@ -69,7 +69,7 @@ namespace
     AreaType generateAreaType(Random& random)
     {
         std::uniform_int_distribution<int> distribution(0, 4);
-        return toAreaType(distribution(random));;
+        return toAreaType(distribution(random));
     }
 
     template <typename OutputIterator, typename Random>
@@ -81,47 +81,75 @@ namespace
     template <typename OutputIterator, typename Random>
     void generateWater(OutputIterator out, std::size_t count, Random& random)
     {
-        std::uniform_real_distribution<btScalar> distribution(0.0, 1.0);
+        std::uniform_real_distribution<float> distribution(0.0, 1.0);
         std::generate_n(out, count, [&] {
-            const btVector3 shift(distribution(random), distribution(random), distribution(random));
-            return RecastMesh::Water {1, btTransform(btMatrix3x3::getIdentity(), shift)};
+            return CellWater {generateVec2i(1000, random), Water {ESM::Land::REAL_SIZE, distribution(random)}};
         });
     }
 
-    template <typename OutputIterator, typename Random>
-    void generateOffMeshConnection(OutputIterator out, std::size_t count, Random& random)
+    template <class Random>
+    Mesh generateMesh(std::size_t triangles, Random& random)
     {
-        std::uniform_real_distribution<btScalar> distribution(0.0, 1.0);
-        std::generate_n(out, count, [&] {
-            const osg::Vec3f start(distribution(random), distribution(random), distribution(random));
-            const osg::Vec3f end(distribution(random), distribution(random), distribution(random));
-            return OffMeshConnection {start, end, generateAreaType(random)};
+        std::uniform_real_distribution<float> distribution(0.0, 1.0);
+        std::vector<float> vertices;
+        std::vector<int> indices;
+        std::vector<AreaType> areaTypes;
+        if (distribution(random) < 0.939)
+        {
+            generateVertices(std::back_inserter(vertices), triangles * 2.467, random);
+            generateIndices(std::back_inserter(indices), static_cast<int>(vertices.size() / 3) - 1, vertices.size() * 1.279, random);
+            generateAreaTypes(std::back_inserter(areaTypes), indices.size() / 3, random);
+        }
+        return Mesh(std::move(indices), std::move(vertices), std::move(areaTypes));
+    }
+
+    template <class Random>
+    Heightfield generateHeightfield(Random& random)
+    {
+        std::uniform_real_distribution<float> distribution(0.0, 1.0);
+        Heightfield result;
+        result.mCellPosition = generateVec2i(1000, random);
+        result.mCellSize = ESM::Land::REAL_SIZE;
+        result.mMinHeight = distribution(random);
+        result.mMaxHeight = result.mMinHeight + 1.0;
+        result.mLength = static_cast<std::uint8_t>(ESM::Land::LAND_SIZE);
+        std::generate_n(std::back_inserter(result.mHeights), ESM::Land::LAND_NUM_VERTS, [&]
+        {
+            return distribution(random);
         });
+        result.mOriginalSize = ESM::Land::LAND_SIZE;
+        result.mMinX = 0;
+        result.mMinY = 0;
+        return result;
+    }
+
+    template <class Random>
+    FlatHeightfield generateFlatHeightfield(Random& random)
+    {
+        std::uniform_real_distribution<float> distribution(0.0, 1.0);
+        FlatHeightfield result;
+        result.mCellPosition = generateVec2i(1000, random);
+        result.mCellSize = ESM::Land::REAL_SIZE;
+        result.mHeight = distribution(random);
+        return result;
     }
 
     template <class Random>
     Key generateKey(std::size_t triangles, Random& random)
     {
         const osg::Vec3f agentHalfExtents = generateAgentHalfExtents(0.5, 1.5, random);
-        const TilePosition tilePosition = generateTilePosition(10000, random);
+        const TilePosition tilePosition = generateVec2i(10000, random);
         const std::size_t generation = std::uniform_int_distribution<std::size_t>(0, 100)(random);
         const std::size_t revision = std::uniform_int_distribution<std::size_t>(0, 10000)(random);
-        std::vector<float> vertices;
-        generateVertices(std::back_inserter(vertices), triangles * 1.98, random);
-        std::vector<int> indices;
-        generateIndices(std::back_inserter(indices), static_cast<int>(vertices.size() / 3) - 1, vertices.size() * 1.53, random);
-        std::vector<AreaType> areaTypes;
-        generateAreaTypes(std::back_inserter(areaTypes), indices.size() / 3, random);
-        std::vector<RecastMesh::Water> water;
-        generateWater(std::back_inserter(water), 2, random);
-        RecastMesh recastMesh(generation, revision, std::move(indices), std::move(vertices),
-                              std::move(areaTypes), std::move(water));
-        std::vector<OffMeshConnection> offMeshConnections;
-        generateOffMeshConnection(std::back_inserter(offMeshConnections), 300, random);
-        return Key {agentHalfExtents, tilePosition, std::move(recastMesh), std::move(offMeshConnections)};
+        Mesh mesh = generateMesh(triangles, random);
+        std::vector<CellWater> water;
+        generateWater(std::back_inserter(water), 1, random);
+        RecastMesh recastMesh(generation, revision, std::move(mesh), std::move(water),
+                              {generateHeightfield(random)}, {generateFlatHeightfield(random)}, {});
+        return Key {agentHalfExtents, tilePosition, std::move(recastMesh)};
     }
 
-    constexpr std::size_t trianglesPerTile = 310;
+    constexpr std::size_t trianglesPerTile = 239;
 
     template <typename OutputIterator, typename Random>
     void generateKeys(OutputIterator out, std::size_t count, Random& random)
@@ -137,7 +165,8 @@ namespace
         while (true)
         {
             Key key = generateKey(trianglesPerTile, random);
-            cache.set(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh, key.mOffMeshConnections, NavMeshData());
+            cache.set(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh,
+                      std::make_unique<PreparedNavMeshData>());
             *out++ = std::move(key);
             const std::size_t newSize = cache.getStats().mNavMeshCacheSize;
             if (size >= newSize)
@@ -159,7 +188,7 @@ namespace
         while (state.KeepRunning())
         {
             const auto& key = keys[n++ % keys.size()];
-            const auto result = cache.get(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh, key.mOffMeshConnections);
+            const auto result = cache.get(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh);
             benchmark::DoNotOptimize(result);
         }
     }
@@ -187,7 +216,8 @@ namespace
         while (state.KeepRunning())
         {
             const auto& key = keys[n++ % keys.size()];
-            const auto result = cache.set(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh, key.mOffMeshConnections, NavMeshData());
+            const auto result = cache.set(key.mAgentHalfExtents, key.mTilePosition, key.mRecastMesh,
+                                          std::make_unique<PreparedNavMeshData>());
             benchmark::DoNotOptimize(result);
         }
     }

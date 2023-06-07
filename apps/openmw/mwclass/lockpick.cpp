@@ -1,6 +1,6 @@
 #include "lockpick.hpp"
 
-#include <components/esm/loadlock.hpp>
+#include <components/esm3/loadlock.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -26,11 +26,6 @@ namespace MWClass
         if (!model.empty()) {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
-    }
-
-    void Lockpick::insertObject(const MWWorld::Ptr& ptr, const std::string& model, MWPhysics::PhysicsSystem& physics) const
-    {
-        // TODO: add option somewhere to enable collision for placeable objects
     }
 
     std::string Lockpick::getModel(const MWWorld::ConstPtr &ptr) const
@@ -85,7 +80,7 @@ namespace MWClass
     {
         std::shared_ptr<Class> instance (new Lockpick);
 
-        registerClass (typeid (ESM::Lockpick).name(), instance);
+        registerClass (ESM::Lockpick::sRecordId, instance);
     }
 
     std::string Lockpick::getUpSoundId (const MWWorld::ConstPtr& ptr) const

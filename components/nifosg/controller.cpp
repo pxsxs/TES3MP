@@ -57,7 +57,7 @@ float ControllerFunction::calculate(float value) const
     }
     case Constant:
     default:
-        return std::min(mStopTime, std::max(mStartTime, time));
+        return std::clamp(time, mStartTime, mStopTime);
     }
 }
 
@@ -72,6 +72,7 @@ KeyframeController::KeyframeController()
 
 KeyframeController::KeyframeController(const KeyframeController &copy, const osg::CopyOp &copyop)
     : SceneUtil::KeyframeController(copy, copyop)
+    , SceneUtil::NodeCallback<KeyframeController, NifOsg::MatrixTransform*>(copy, copyop)
     , mRotations(copy.mRotations)
     , mXRotations(copy.mXRotations)
     , mYRotations(copy.mYRotations)
@@ -81,34 +82,37 @@ KeyframeController::KeyframeController(const KeyframeController &copy, const osg
 {
 }
 
-KeyframeController::KeyframeController(const Nif::NiKeyframeData *data)
-    : mRotations(data->mRotations)
-    , mXRotations(data->mXRotations, 0.f)
-    , mYRotations(data->mYRotations, 0.f)
-    , mZRotations(data->mZRotations, 0.f)
-    , mTranslations(data->mTranslations, osg::Vec3f())
-    , mScales(data->mScales, 1.f)
+KeyframeController::KeyframeController(const Nif::NiKeyframeController *keyctrl)
 {
-}
-
-KeyframeController::KeyframeController(const Nif::NiTransformInterpolator* interpolator)
-    : mRotations(interpolator->data->mRotations, interpolator->defaultRot)
-    , mXRotations(interpolator->data->mXRotations, 0.f)
-    , mYRotations(interpolator->data->mYRotations, 0.f)
-    , mZRotations(interpolator->data->mZRotations, 0.f)
-    , mTranslations(interpolator->data->mTranslations, interpolator->defaultPos)
-    , mScales(interpolator->data->mScales, interpolator->defaultScale)
-{
-}
-
-KeyframeController::KeyframeController(const float scale, const osg::Vec3f& pos, const osg::Quat& rot)
-    : mRotations(Nif::QuaternionKeyMapPtr(), rot)
-    , mXRotations(Nif::FloatKeyMapPtr(), 0.f)
-    , mYRotations(Nif::FloatKeyMapPtr(), 0.f)
-    , mZRotations(Nif::FloatKeyMapPtr(), 0.f)
-    , mTranslations(Nif::Vector3KeyMapPtr(), pos)
-    , mScales(Nif::FloatKeyMapPtr(), scale)
-{
+    if (!keyctrl->interpolator.empty())
+    {
+        const Nif::NiTransformInterpolator* interp = keyctrl->interpolator.getPtr();
+        if (!interp->data.empty())
+        {
+            mRotations = QuaternionInterpolator(interp->data->mRotations, interp->defaultRot);
+            mXRotations = FloatInterpolator(interp->data->mXRotations);
+            mYRotations = FloatInterpolator(interp->data->mYRotations);
+            mZRotations = FloatInterpolator(interp->data->mZRotations);
+            mTranslations = Vec3Interpolator(interp->data->mTranslations, interp->defaultPos);
+            mScales = FloatInterpolator(interp->data->mScales, interp->defaultScale);
+        }
+        else
+        {
+            mRotations = QuaternionInterpolator(Nif::QuaternionKeyMapPtr(), interp->defaultRot);
+            mTranslations = Vec3Interpolator(Nif::Vector3KeyMapPtr(), interp->defaultPos);
+            mScales = FloatInterpolator(Nif::FloatKeyMapPtr(), interp->defaultScale);
+        }
+    }
+    else if (!keyctrl->data.empty())
+    {
+        const Nif::NiKeyframeData* keydata = keyctrl->data.getPtr();
+        mRotations = QuaternionInterpolator(keydata->mRotations);
+        mXRotations = FloatInterpolator(keydata->mXRotations);
+        mYRotations = FloatInterpolator(keydata->mYRotations);
+        mZRotations = FloatInterpolator(keydata->mZRotations);
+        mTranslations = Vec3Interpolator(keydata->mTranslations);
+        mScales = FloatInterpolator(keydata->mScales, 1.f);
+    }
 }
 
 osg::Quat KeyframeController::getXYZRotation(float time) const
@@ -133,16 +137,15 @@ osg::Vec3f KeyframeController::getTranslation(float time) const
     return osg::Vec3f();
 }
 
-void KeyframeController::operator() (osg::Node* node, osg::NodeVisitor* nv)
+void KeyframeController::operator() (NifOsg::MatrixTransform* node, osg::NodeVisitor* nv)
 {
     if (hasInput())
     {
-        NifOsg::MatrixTransform* trans = static_cast<NifOsg::MatrixTransform*>(node);
-        osg::Matrix mat = trans->getMatrix();
+        osg::Matrix mat = node->getMatrix();
 
         float time = getInputValue(nv);
 
-        Nif::Matrix3& rot = trans->mRotationScale;
+        Nif::Matrix3& rot = node->mRotationScale;
 
         bool setRot = false;
         if(!mRotations.empty())
@@ -168,7 +171,7 @@ void KeyframeController::operator() (osg::Node* node, osg::NodeVisitor* nv)
                 for (int j=0;j<3;++j)
                     rot.mValues[i][j] = mat(j,i); // NB column/row major difference
 
-        float& scale = trans->mScale;
+        float& scale = node->mScale;
         if(!mScales.empty())
             scale = mScales.interpKey(time);
 
@@ -179,7 +182,7 @@ void KeyframeController::operator() (osg::Node* node, osg::NodeVisitor* nv)
         if(!mTranslations.empty())
             mat.setTrans(mTranslations.interpKey(time));
 
-        trans->setMatrix(mat);
+        node->setMatrix(mat);
     }
 
     traverse(node, nv);
@@ -190,8 +193,8 @@ GeomMorpherController::GeomMorpherController()
 }
 
 GeomMorpherController::GeomMorpherController(const GeomMorpherController &copy, const osg::CopyOp &copyop)
-    : osg::Drawable::UpdateCallback(copy, copyop)
-    , Controller(copy)
+    : Controller(copy)
+    , SceneUtil::NodeCallback<GeomMorpherController, SceneUtil::MorphGeometry*>(copy, copyop)
     , mKeyFrames(copy.mKeyFrames)
 {
 }
@@ -217,26 +220,25 @@ GeomMorpherController::GeomMorpherController(const Nif::NiGeomMorpherController*
     }
 }
 
-void GeomMorpherController::update(osg::NodeVisitor *nv, osg::Drawable *drawable)
+void GeomMorpherController::operator()(SceneUtil::MorphGeometry* node, osg::NodeVisitor *nv)
 {
-    SceneUtil::MorphGeometry* morphGeom = static_cast<SceneUtil::MorphGeometry*>(drawable);
     if (hasInput())
     {
         if (mKeyFrames.size() <= 1)
             return;
         float input = getInputValue(nv);
-        int i = 0;
+        int i = 1;
         for (std::vector<FloatInterpolator>::iterator it = mKeyFrames.begin()+1; it != mKeyFrames.end(); ++it,++i)
         {
             float val = 0;
             if (!(*it).empty())
                 val = it->interpKey(input);
 
-            SceneUtil::MorphGeometry::MorphTarget& target = morphGeom->getMorphTarget(i);
+            SceneUtil::MorphGeometry::MorphTarget& target = node->getMorphTarget(i);
             if (target.getWeight() != val)
             {
                 target.setWeight(val);
-                morphGeom->dirty();
+                node->dirty();
             }
         }
     }
@@ -311,7 +313,7 @@ VisController::VisController()
 }
 
 VisController::VisController(const VisController &copy, const osg::CopyOp &copyop)
-    : osg::NodeCallback(copy, copyop)
+    : SceneUtil::NodeCallback<VisController>(copy, copyop)
     , Controller(copy)
     , mData(copy.mData)
     , mMask(copy.mMask)
@@ -352,14 +354,14 @@ RollController::RollController(const Nif::NiFloatInterpolator* interpolator)
 }
 
 RollController::RollController(const RollController &copy, const osg::CopyOp &copyop)
-    : osg::NodeCallback(copy, copyop)
+    : SceneUtil::NodeCallback<RollController, osg::MatrixTransform*>(copy, copyop)
     , Controller(copy)
     , mData(copy.mData)
     , mStartingTime(copy.mStartingTime)
 {
 }
 
-void RollController::operator() (osg::Node* node, osg::NodeVisitor* nv)
+void RollController::operator() (osg::MatrixTransform* node, osg::NodeVisitor* nv)
 {
     traverse(node, nv);
 
@@ -370,15 +372,14 @@ void RollController::operator() (osg::Node* node, osg::NodeVisitor* nv)
         mStartingTime = newTime;
 
         float value = mData.interpKey(getInputValue(nv));
-        osg::MatrixTransform* transform = static_cast<osg::MatrixTransform*>(node);
-        osg::Matrix matrix = transform->getMatrix();
+        osg::Matrix matrix = node->getMatrix();
 
         // Rotate around "roll" axis.
         // Note: in original game rotation speed is the framerate-dependent in a very tricky way.
         // Do not replicate this behaviour until we will really need it.
         // For now consider controller's current value as an angular speed in radians per 1/60 seconds.
         matrix = osg::Matrix::rotate(value * duration * 60.f, 0, 0, 1) * matrix;
-        transform->setMatrix(matrix);
+        node->setMatrix(matrix);
     }
 }
 
@@ -544,29 +545,28 @@ ParticleSystemController::ParticleSystemController()
 }
 
 ParticleSystemController::ParticleSystemController(const ParticleSystemController &copy, const osg::CopyOp &copyop)
-    : osg::NodeCallback(copy, copyop)
+    : SceneUtil::NodeCallback<ParticleSystemController, osgParticle::ParticleProcessor*>(copy, copyop)
     , Controller(copy)
     , mEmitStart(copy.mEmitStart)
     , mEmitStop(copy.mEmitStop)
 {
 }
 
-void ParticleSystemController::operator() (osg::Node* node, osg::NodeVisitor* nv)
+void ParticleSystemController::operator() (osgParticle::ParticleProcessor* node, osg::NodeVisitor* nv)
 {
-    osgParticle::ParticleProcessor* emitter = static_cast<osgParticle::ParticleProcessor*>(node);
     if (hasInput())
     {
         float time = getInputValue(nv);
-        emitter->getParticleSystem()->setFrozen(false);
-        emitter->setEnabled(time >= mEmitStart && time < mEmitStop);
+        node->getParticleSystem()->setFrozen(false);
+        node->setEnabled(time >= mEmitStart && time < mEmitStop);
     }
     else
-        emitter->getParticleSystem()->setFrozen(true);
+        node->getParticleSystem()->setFrozen(true);
     traverse(node, nv);
 }
 
 PathController::PathController(const PathController &copy, const osg::CopyOp &copyop)
-    : osg::NodeCallback(copy, copyop)
+    : SceneUtil::NodeCallback<PathController, osg::MatrixTransform*>(copy, copyop)
     , Controller(copy)
     , mPath(copy.mPath)
     , mPercent(copy.mPercent)
@@ -591,7 +591,7 @@ float PathController::getPercent(float time) const
     return percent;
 }
 
-void PathController::operator() (osg::Node* node, osg::NodeVisitor* nv)
+void PathController::operator() (osg::MatrixTransform* node, osg::NodeVisitor* nv)
 {
     if (mPath.empty() || mPercent.empty() || !hasInput())
     {
@@ -599,14 +599,13 @@ void PathController::operator() (osg::Node* node, osg::NodeVisitor* nv)
         return;
     }
 
-    osg::MatrixTransform* trans = static_cast<osg::MatrixTransform*>(node);
-    osg::Matrix mat = trans->getMatrix();
+    osg::Matrix mat = node->getMatrix();
 
     float time = getInputValue(nv);
     float percent = getPercent(time);
     osg::Vec3f pos(mPath.interpKey(percent));
     mat.setTrans(pos);
-    trans->setMatrix(mat);
+    node->setMatrix(mat);
 
     traverse(node, nv);
 }

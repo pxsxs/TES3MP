@@ -1,13 +1,16 @@
 #include "actoradapter.hpp"
 
-#include <components/esm/loadarmo.hpp>
-#include <components/esm/loadclot.hpp>
-#include <components/esm/loadnpc.hpp>
-#include <components/esm/loadrace.hpp>
-#include <components/esm/mappings.hpp>
+#include <components/esm3/loadarmo.hpp>
+#include <components/esm3/loadclot.hpp>
+#include <components/esm3/loadnpc.hpp>
+#include <components/esm3/loadrace.hpp>
+#include <components/esm3/mappings.hpp>
 #include <components/sceneutil/actorutil.hpp>
 
 #include "data.hpp"
+
+#include <string>
+#include <string_view>
 
 namespace CSMWorld
 {
@@ -121,7 +124,7 @@ namespace CSMWorld
         return SceneUtil::getActorSkeleton(firstPerson, mFemale, beast, werewolf);
     }
 
-    const std::string ActorAdapter::ActorData::getPart(ESM::PartReferenceType index) const
+    std::string_view ActorAdapter::ActorData::getPart(ESM::PartReferenceType index) const
     {
         auto it = mParts.find(index);
         if (it == mParts.end())
@@ -131,7 +134,7 @@ namespace CSMWorld
                 if (mFemale)
                 {
                     // Note: we should use male parts for females as fallback
-                    const std::string femalePart = mRaceData->getFemalePart(index);
+                    const std::string& femalePart = mRaceData->getFemalePart(index);
                     if (!femalePart.empty())
                         return femalePart;
                 }
@@ -139,11 +142,10 @@ namespace CSMWorld
                 return mRaceData->getMalePart(index);
             }
 
-            return "";
+            return {};
         }
 
-        const std::string& partName = it->second.first;
-        return partName;
+        return it->second.first;
     }
 
     bool ActorAdapter::ActorData::hasDependency(const std::string& id) const

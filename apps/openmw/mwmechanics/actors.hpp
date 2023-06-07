@@ -41,15 +41,7 @@ namespace MWMechanics
     {
             std::map<std::string, int> mDeathCount;
 
-            void addBoundItem (const std::string& itemId, const MWWorld::Ptr& actor);
-            void removeBoundItem (const std::string& itemId, const MWWorld::Ptr& actor);
-
-            void adjustMagicEffects (const MWWorld::Ptr& creature);
-
-            void calculateDynamicStats (const MWWorld::Ptr& ptr);
-
-            void calculateCreatureStatModifiers (const MWWorld::Ptr& ptr, float duration);
-            void calculateNpcStatModifiers (const MWWorld::Ptr& ptr, float duration);
+            void adjustMagicEffects (const MWWorld::Ptr& creature, float duration);
 
             void calculateRestoration (const MWWorld::Ptr& ptr, float duration);
 
@@ -94,14 +86,14 @@ namespace MWMechanics
             ///
             /// \note Dead actors are ignored.
 
-            void removeActor (const MWWorld::Ptr& ptr);
+            void removeActor (const MWWorld::Ptr& ptr, bool keepActive);
             ///< Deregister an actor for stats management
             ///
             /// \note Ignored, if \a ptr is not a registered actor.
 
             void resurrect (const MWWorld::Ptr& ptr);
 
-            void castSpell(const MWWorld::Ptr& ptr, const std::string spellId, bool manualSpell=false);
+            void castSpell(const MWWorld::Ptr& ptr, const std::string& spellId, bool manualSpell=false);
 
             void updateActor(const MWWorld::Ptr &old, const MWWorld::Ptr& ptr);
             ///< Updates an actor with a new Ptr
@@ -119,6 +111,8 @@ namespace MWMechanics
             ///< This function is normally called automatically during the update process, but it can
             /// also be called explicitly at any time to force an update.
 
+            /// Removes an actor from combat and makes all of their allies stop fighting the actor's targets
+            void stopCombat(const MWWorld::Ptr& ptr);
             /** Start combat between two actors
                 @Notes: If againstPlayer = true then actor2 should be the Player.
                         If one of the combatants is creature it should be actor1.
@@ -150,16 +144,6 @@ namespace MWMechanics
 
             int countDeaths (const std::string& id) const;
             ///< Return the number of deaths for actors with the given ID.
-
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the number of deaths for an actor with the given refId
-            */
-            void setDeaths(const std::string& refId, int number);
-            /*
-                End of tes3mp addition
-            */
 
             bool isAttackPreparing(const MWWorld::Ptr& ptr);
             bool isRunning(const MWWorld::Ptr& ptr);
@@ -211,16 +195,6 @@ namespace MWMechanics
             bool isReadyToBlock(const MWWorld::Ptr& ptr) const;
             bool isAttackingOrSpell(const MWWorld::Ptr& ptr) const;
 
-            /*
-                Start of tes3mp addition
-
-                Make it possible to set the attackingOrSpell state from elsewhere in the code
-            */
-            void setAttackingOrSpell(const MWWorld::Ptr& ptr, bool state) const;
-            /*
-                End of tes3mp addition
-            */
-
             int getGreetingTimer(const MWWorld::Ptr& ptr) const;
             float getAngleToPlayer(const MWWorld::Ptr& ptr) const;
             GreetingState getGreetingState(const MWWorld::Ptr& ptr) const;
@@ -228,7 +202,6 @@ namespace MWMechanics
 
     private:
         void updateVisibility (const MWWorld::Ptr& ptr, CharacterController* ctrl);
-        void applyCureEffects (const MWWorld::Ptr& actor);
 
         PtrActorMap mActors;
         float mTimerDisposeSummonsCorpses;

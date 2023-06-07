@@ -74,12 +74,6 @@ namespace Debug
         if (level != NoLevel)
             msg = msg.substr(1);
 
-        /*
-            Start of tes3mp change (major)
-
-            Don't use these timestamps, as TES3MP has its own
-        */
-        /*
         char prefix[32];
         int prefixSize;
         {
@@ -92,10 +86,6 @@ namespace Debug
             prefixSize += snprintf(prefix + prefixSize, sizeof(prefix) - prefixSize,
                                    ".%03u %c] ", static_cast<unsigned>(ms % 1000), levelLetter);
         }
-        */
-        /*
-            End of tes3mp change (major)
-        */
 
         while (!msg.empty())
         {
@@ -104,15 +94,7 @@ namespace Debug
             size_t lineSize = 1;
             while (lineSize < msg.size() && msg[lineSize - 1] != '\n')
                 lineSize++;
-            /*
-                Start of tes3mp change (major)
-
-                Don't use these timestamps, as TES3MP has its own
-            */
-            //writeImpl(prefix, prefixSize, level);
-            /*
-                End of tes3mp change (major)
-            */
+            writeImpl(prefix, prefixSize, level);
             writeImpl(msg.data(), lineSize, level);
             msg = msg.substr(lineSize);
         }
@@ -165,7 +147,6 @@ static boost::iostreams::stream_buffer<Debug::Tee> coutsb;
 static boost::iostreams::stream_buffer<Debug::Tee> cerrsb;
 #endif
 
-
 std::ostream& getRawStdout()
 {
     return rawStdout ? *rawStdout : std::cout;
@@ -190,6 +171,7 @@ void setupLogging(const std::string& logDir, const std::string& appName, std::io
     std::cerr.rdbuf(&cerrsb);
 #endif
 }
+
 int wrapApplication(int (*innerApplication)(int argc, char *argv[]), int argc, char *argv[],
                     const std::string& appName, bool autoSetupLogging)
 {
@@ -214,7 +196,6 @@ int wrapApplication(int (*innerApplication)(int argc, char *argv[]), int argc, c
 
             setupLogging(cfgMgr.getLogPath().string(), appName, mode);
         }
-
 
 #if defined(_WIN32)
         const std::string crashLogName = Misc::StringUtils::lowerCase(appName) + "-crash.dmp";

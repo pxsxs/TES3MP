@@ -2,26 +2,25 @@
 
 #include <iomanip>
 
-#include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
 #include <osgDB/ReadFile>
 #include <osg/ImageUtils>
 
-#include <components/esm/esmreader.hpp>
-#include <components/esm/esmwriter.hpp>
+#include <components/esm3/esmreader.hpp>
+#include <components/esm3/esmwriter.hpp>
 #include <components/esm/defs.hpp>
 
-#include <components/esm/savedgame.hpp>
-#include <components/esm/player.hpp>
+#include <components/esm3/savedgame.hpp>
+#include <components/esm3/player.hpp>
 
-#include <components/esm/loadalch.hpp>
-#include <components/esm/loadspel.hpp>
-#include <components/esm/loadarmo.hpp>
-#include <components/esm/loadweap.hpp>
-#include <components/esm/loadclot.hpp>
-#include <components/esm/loadench.hpp>
-#include <components/esm/loadlevlist.hpp>
+#include <components/esm3/loadalch.hpp>
+#include <components/esm3/loadspel.hpp>
+#include <components/esm3/loadarmo.hpp>
+#include <components/esm3/loadweap.hpp>
+#include <components/esm3/loadclot.hpp>
+#include <components/esm3/loadench.hpp>
+#include <components/esm3/loadlevlist.hpp>
 
 #include <components/misc/constants.hpp>
 
@@ -324,14 +323,14 @@ namespace ESSImport
             ESM::NAME n = esm.getRecName();
             esm.getRecHeader();
 
-            auto it = converters.find(n.intval);
+            auto it = converters.find(n.toInt());
             if (it != converters.end())
             {
                 it->second->read(esm);
             }
             else
             {
-                if (unknownRecords.insert(n.intval).second)
+                if (unknownRecords.insert(n.toInt()).second)
                 {
                     std::ios::fmtflags f(std::cerr.flags());
                     std::cerr << "Error: unknown record " << n.toString() << " (0x" << std::hex << esm.getFileOffset() << ")" << std::endl;
@@ -385,7 +384,7 @@ namespace ESSImport
 
         // Writing order should be Dynamic Store -> Cells -> Player,
         // so that references to dynamic records can be recognized when loading
-        for (std::map<unsigned int, std::shared_ptr<Converter> >::const_iterator it = converters.begin();
+        for (auto it = converters.begin();
              it != converters.end(); ++it)
         {
             if (it->second->getStage() != 0)
@@ -398,7 +397,7 @@ namespace ESSImport
         context.mPlayerBase.save(writer);
         writer.endRecord(ESM::REC_NPC_);
 
-        for (std::map<unsigned int, std::shared_ptr<Converter> >::const_iterator it = converters.begin();
+        for (auto it = converters.begin();
              it != converters.end(); ++it)
         {
             if (it->second->getStage() != 1)
@@ -423,7 +422,7 @@ namespace ESSImport
         writer.endRecord(ESM::REC_ACTC);
 
         // Stage 2 requires cell references to be written / actors IDs assigned
-        for (std::map<unsigned int, std::shared_ptr<Converter> >::const_iterator it = converters.begin();
+        for (auto it = converters.begin();
              it != converters.end(); ++it)
         {
             if (it->second->getStage() != 2)

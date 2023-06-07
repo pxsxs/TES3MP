@@ -1,9 +1,8 @@
 ///Program to test .nif files both on the FileSystem and in BSA archives.
 
 #include <iostream>
-#include <fstream>
-#include <cstdlib>
 
+#include <components/misc/stringops.hpp>
 #include <components/nif/niffile.hpp>
 #include <components/files/constrainedfilestream.hpp>
 #include <components/vfs/manager.hpp>
@@ -18,18 +17,10 @@ namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
 
 ///See if the file has the named extension
-bool hasExtension(std::string filename, std::string  extensionToFind)
+bool hasExtension(std::string filename, std::string extensionToFind)
 {
     std::string extension = filename.substr(filename.find_last_of('.')+1);
-
-    //Convert strings to lower case for comparison
-    std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
-    std::transform(extensionToFind.begin(), extensionToFind.end(), extensionToFind.begin(), ::tolower);
-
-    if(extension == extensionToFind)
-        return true;
-    else
-        return false;
+    return Misc::StringUtils::ciEqual(extension, extensionToFind);
 }
 
 ///See if the file has the "nif" extension.
@@ -52,11 +43,8 @@ void readVFS(VFS::Archive* anArchive,std::string archivePath = "")
     myManager.addArchive(anArchive);
     myManager.buildIndex();
 
-    std::map<std::string, VFS::File*> files=myManager.getIndex();
-    for(std::map<std::string, VFS::File*>::const_iterator it=files.begin(); it!=files.end(); ++it)
+    for(const auto& name : myManager.getRecursiveDirectoryIterator(""))
     {
-        std::string name = it->first;
-
         try{
             if(isNIF(name))
             {
@@ -134,7 +122,7 @@ int main(int argc, char **argv)
 
     Nif::NIFFile::setLoadUnsupportedFiles(true);
 //     std::cout << "Reading Files" << std::endl;
-    for(std::vector<std::string>::const_iterator it=files.begin(); it!=files.end(); ++it)
+    for(auto it=files.begin(); it!=files.end(); ++it)
     {
         std::string name = *it;
 

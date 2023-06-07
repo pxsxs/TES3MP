@@ -1,15 +1,16 @@
 ﻿#ifndef OPENMW_COMPONENTS_DETOURNAVIGATOR_NAVIGATOR_H
 #define OPENMW_COMPONENTS_DETOURNAVIGATOR_NAVIGATOR_H
 
-#include "findsmoothpath.hpp"
-#include "flags.hpp"
-#include "settings.hpp"
 #include "objectid.hpp"
 #include "navmeshcacheitem.hpp"
 #include "recastmeshtiles.hpp"
 #include "waitconditiontype.hpp"
+#include "heightfieldshape.hpp"
+#include "objecttransform.hpp"
 
 #include <components/resource/bulletshape.hpp>
+
+#include <string_view>
 
 namespace ESM
 {
@@ -24,13 +25,19 @@ namespace Loading
 
 namespace DetourNavigator
 {
+    struct Settings;
+
     struct ObjectShapes
     {
         osg::ref_ptr<const Resource::BulletShapeInstance> mShapeInstance;
+        ObjectTransform mTransform;
 
-        ObjectShapes(const osg::ref_ptr<const Resource::BulletShapeInstance>& shapeInstance)
+        ObjectShapes(const osg::ref_ptr<const Resource::BulletShapeInstance>& shapeInstance, const ObjectTransform& transform)
             : mShapeInstance(shapeInstance)
-        {}
+            , mTransform(transform)
+        {
+            assert(mShapeInstance != nullptr);
+        }
     };
 
     struct DoorShapes : ObjectShapes
@@ -39,8 +46,8 @@ namespace DetourNavigator
         osg::Vec3f mConnectionEnd;
 
         DoorShapes(const osg::ref_ptr<const Resource::BulletShapeInstance>& shapeInstance,
-                   const osg::Vec3f& connectionStart,const osg::Vec3f& connectionEnd)
-            : ObjectShapes(shapeInstance)
+                   const ObjectTransform& transform, const osg::Vec3f& connectionStart, const osg::Vec3f& connectionEnd)
+            : ObjectShapes(shapeInstance, transform)
             , mConnectionStart(connectionStart)
             , mConnectionEnd(connectionEnd)
         {}
@@ -71,15 +78,10 @@ namespace DetourNavigator
         virtual void removeAgent(const osg::Vec3f& agentHalfExtents) = 0;
 
         /**
-         * @brief addObject is used to add object represented by single btHeightfieldTerrainShape and btTransform.
-         * @param id is used to distinguish different objects.
-         * @param holder shape wrapper to keep shape lifetime after object is removed.
-         * @param shape must be wrapped by holder.
-         * @param transform allows to setup object geometry according to its world state.
-         * @return true if object is added, false if there is already object with given id.
+         * @brief setWorldspace should be called before adding object from new worldspace
+         * @param worldspace
          */
-        virtual bool addObject(const ObjectId id, const osg::ref_ptr<const osg::Object>& holder,
-                               const btHeightfieldTerrainShape& shape, const btTransform& transform) = 0;
+        virtual void setWorldspace(std::string_view worldspace) = 0;
 
         /**
          * @brief addObject is used to add complex object with allowed to walk and avoided to walk shapes
@@ -128,14 +130,12 @@ namespace DetourNavigator
          * @brief addWater is used to set water level at given world cell.
          * @param cellPosition allows to distinguish cells if there is many in current world.
          * @param cellSize set cell borders. std::numeric_limits<int>::max() disables cell borders.
-         * @param level set z coordinate of water surface at the scene.
-         * @param transform set global shift of cell center.
+         * @param shift set global shift of cell center.
          * @return true if there was no water at given cell if cellSize != std::numeric_limits<int>::max() or there is
          * at least single object is added to the scene, false if there is already water for given cell or there is no
          * any other objects.
          */
-        virtual bool addWater(const osg::Vec2i& cellPosition, const int cellSize, const btScalar level,
-            const btTransform& transform) = 0;
+        virtual bool addWater(const osg::Vec2i& cellPosition, int cellSize, float level) = 0;
 
         /**
          * @brief removeWater to make it no more available at the scene.
@@ -143,6 +143,10 @@ namespace DetourNavigator
          * @return true if there was water at given cell.
          */
         virtual bool removeWater(const osg::Vec2i& cellPosition) = 0;
+
+        virtual bool addHeightfield(const osg::Vec2i& cellPosition, int cellSize, const HeightfieldShape& shape) = 0;
+
+        virtual bool removeHeightfield(const osg::Vec2i& cellPosition) = 0;
 
         virtual void addPathgrid(const ESM::Cell& cell, const ESM::Pathgrid& pathgrid) = 0;
 
@@ -172,37 +176,6 @@ namespace DetourNavigator
         virtual void wait(Loading::Listener& listener, WaitConditionType waitConditionType) = 0;
 
         /**
-         * @brief findPath fills output iterator with points of scene surfaces to be used for actor to walk through.
-         * @param agentHalfExtents allows to find navmesh for given actor.
-         * @param start path from given point.
-         * @param end path at given point.
-         * @param includeFlags setup allowed surfaces for actor to walk.
-         * @param out the beginning of the destination range.
-         * @return Output iterator to the element in the destination range, one past the last element of found path.
-         * Equal to out if no path is found.
-         */
-        template <class OutputIterator>
-        Status findPath(const osg::Vec3f& agentHalfExtents, const float stepSize, const osg::Vec3f& start,
-            const osg::Vec3f& end, const Flags includeFlags, const DetourNavigator::AreaCosts& areaCosts,
-            OutputIterator& out) const
-        {
-            static_assert(
-                std::is_same<
-                    typename std::iterator_traits<OutputIterator>::iterator_category,
-                    std::output_iterator_tag
-                >::value,
-                "out is not an OutputIterator"
-            );
-            const auto navMesh = getNavMesh(agentHalfExtents);
-            if (!navMesh)
-                return Status::NavMeshNotFound;
-            const auto settings = getSettings();
-            return findSmoothPath(navMesh->lockConst()->getImpl(), toNavMeshCoordinates(settings, agentHalfExtents),
-                toNavMeshCoordinates(settings, stepSize), toNavMeshCoordinates(settings, start),
-                toNavMeshCoordinates(settings, end), includeFlags, areaCosts, settings, out);
-        }
-
-        /**
          * @brief getNavMesh returns navmesh for specific agent half extents
          * @return navmesh
          */
@@ -218,32 +191,14 @@ namespace DetourNavigator
 
         virtual void reportStats(unsigned int frameNumber, osg::Stats& stats) const = 0;
 
-        /**
-         * @brief findRandomPointAroundCircle returns random location on navmesh within the reach of specified location.
-         * @param agentHalfExtents allows to find navmesh for given actor.
-         * @param start path from given point.
-         * @param maxRadius limit maximum distance from start.
-         * @param includeFlags setup allowed surfaces for actor to walk.
-         * @return not empty optional with position if point is found and empty optional if point is not found.
-         */
-        std::optional<osg::Vec3f> findRandomPointAroundCircle(const osg::Vec3f& agentHalfExtents,
-            const osg::Vec3f& start, const float maxRadius, const Flags includeFlags) const;
-
-        /**
-         * @brief raycast finds farest navmesh point from start on a line from start to end that has path from start.
-         * @param agentHalfExtents allows to find navmesh for given actor.
-         * @param start of the line
-         * @param end of the line
-         * @param includeFlags setup allowed surfaces for actor to walk.
-         * @return not empty optional with position if point is found and empty optional if point is not found.
-         */
-        std::optional<osg::Vec3f> raycast(const osg::Vec3f& agentHalfExtents, const osg::Vec3f& start,
-            const osg::Vec3f& end, const Flags includeFlags) const;
-
-        virtual RecastMeshTiles getRecastMeshTiles() = 0;
+        virtual RecastMeshTiles getRecastMeshTiles() const = 0;
 
         virtual float getMaxNavmeshAreaRealRadius() const = 0;
     };
+
+    std::unique_ptr<Navigator> makeNavigator(const Settings& settings, const std::string& userDataPath);
+
+    std::unique_ptr<Navigator> makeNavigatorStub();
 }
 
 #endif

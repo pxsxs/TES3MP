@@ -27,10 +27,6 @@ struct ConfigurationManager
     void readConfiguration(boost::program_options::variables_map& variables,
         boost::program_options::options_description& description, bool quiet=false);
 
-    boost::program_options::variables_map separateComposingVariables(boost::program_options::variables_map& variables, boost::program_options::options_description& description);
-
-    void mergeComposingVariables(boost::program_options::variables_map& first, boost::program_options::variables_map& second, boost::program_options::options_description& description);
-
     void processPath(boost::filesystem::path& path, bool create = false) const;
     void processPaths(Files::PathContainer& dataDirs, bool create = false) const;
     ///< \param create Try creating the directory, if it does not exist.
@@ -82,6 +78,29 @@ struct ConfigurationManager
 
         bool mSilent;
 };
+
+boost::program_options::variables_map separateComposingVariables(boost::program_options::variables_map& variables,
+    boost::program_options::options_description& description);
+
+void mergeComposingVariables(boost::program_options::variables_map& first, boost::program_options::variables_map& second,
+    boost::program_options::options_description& description);
+
+void parseArgs(int argc, const char* const argv[], boost::program_options::variables_map& variables,
+    boost::program_options::options_description& description);
+
+void parseConfig(std::istream& stream, boost::program_options::variables_map& variables,
+    boost::program_options::options_description& description);
+
+class MaybeQuotedPath : public boost::filesystem::path
+{
+};
+
+std::istream& operator>> (std::istream& istream, MaybeQuotedPath& MaybeQuotedPath);
+
+typedef std::vector<MaybeQuotedPath> MaybeQuotedPathContainer;
+
+PathContainer asPathContainer(const MaybeQuotedPathContainer& MaybeQuotedPathContainer);
+
 } /* namespace Cfg */
 
 #endif /* COMPONENTS_FILES_CONFIGURATIONMANAGER_HPP */

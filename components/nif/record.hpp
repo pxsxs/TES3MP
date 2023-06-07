@@ -72,6 +72,7 @@ enum RecordType
   RC_NiBSAnimationNode,
   RC_NiLight,
   RC_NiTextureEffect,
+  RC_NiExtraData,
   RC_NiVertWeightsExtraData,
   RC_NiTextKeyExtraData,
   RC_NiStringExtraData,
@@ -124,7 +125,24 @@ enum RecordType
   RC_BSLODTriShape,
   RC_BSShaderProperty,
   RC_BSShaderPPLightingProperty,
-  RC_BSShaderNoLightingProperty
+  RC_BSShaderNoLightingProperty,
+  RC_BSFurnitureMarker,
+  RC_NiCollisionObject,
+  RC_bhkCollisionObject,
+  RC_BSDismemberSkinInstance,
+  RC_NiControllerManager,
+  RC_bhkMoppBvTreeShape,
+  RC_bhkNiTriStripsShape,
+  RC_bhkPackedNiTriStripsShape,
+  RC_hkPackedNiTriStripsData,
+  RC_bhkConvexVerticesShape,
+  RC_bhkBoxShape,
+  RC_bhkListShape,
+  RC_bhkRigidBody,
+  RC_bhkRigidBodyT,
+  RC_BSLightingShaderProperty,
+  RC_NiClusterAccumulator,
+  RC_NiAlphaAccumulator
 };
 
 /// Base class for all records

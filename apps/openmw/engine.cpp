@@ -1,14 +1,14 @@
 #include "engine.hpp"
 
 #include <iomanip>
-#include <fstream>
 #include <chrono>
 #include <thread>
 
 #include <boost/filesystem/fstream.hpp>
 
+#include <osg/Version>
+
 #include <osgViewer/ViewerEventHandlers>
-#include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 
 #include <SDL.h>
@@ -36,25 +36,17 @@
 
 #include <components/version/version.hpp>
 
-/*
-    Start of tes3mp addition
-
-    Include additional headers for multiplayer purposes
-*/
-#include <components/openmw-mp/TimedLog.hpp>
-#include "mwmp/Main.hpp"
-#include "mwmp/GUIController.hpp"
-/*
-    End of tes3mp addition
-*/
-
-#include <components/detournavigator/navigator.hpp>
-
 #include <components/misc/frameratelimiter.hpp>
+
+#include <components/sceneutil/screencapture.hpp>
+#include <components/sceneutil/depth.hpp>
+#include <components/sceneutil/util.hpp>
 
 #include "mwinput/inputmanagerimp.hpp"
 
 #include "mwgui/windowmanagerimp.hpp"
+
+#include "mwlua/luamanagerimp.hpp"
 
 #include "mwscript/scriptmanagerimp.hpp"
 #include "mwscript/interpretercontext.hpp"
@@ -111,6 +103,7 @@ namespace
         PhysicsWorker,
         World,
         Gui,
+        Lua,
 
         Number,
     };
@@ -147,6 +140,9 @@ namespace
 
     template <>
     const UserStats UserStatsValue<UserStatsType::Gui>::sValue {"Gui", "gui"};
+
+    template <>
+    const UserStats UserStatsValue<UserStatsType::Lua>::sValue {"Lua", "lua"};
 
     template <UserStatsType type>
     struct ForEachUserStatsValue
@@ -228,6 +224,33 @@ namespace
         if (Settings::Manager::getInt("async num threads", "Physics") == 0)
             profiler.removeUserStatsLine(" -Async");
     }
+
+    struct ScheduleNonDialogMessageBox
+    {
+        void operator()(std::string message) const
+        {
+            MWBase::Environment::get().getWindowManager()->scheduleMessageBox(std::move(message), MWGui::ShowInDialogueMode_Never);
+        }
+    };
+
+    struct IgnoreString
+    {
+        void operator()(std::string) const {}
+    };
+
+    class IdentifyOpenGLOperation : public osg::GraphicsOperation
+    {
+    public:
+        IdentifyOpenGLOperation() : GraphicsOperation("IdentifyOpenGLOperation", false)
+        {}
+
+        void operator()(osg::GraphicsContext* graphicsContext) override
+        {
+            Log(Debug::Info) << "OpenGL Vendor: " << glGetString(GL_VENDOR);
+            Log(Debug::Info) << "OpenGL Renderer: " << glGetString(GL_RENDERER);
+            Log(Debug::Info) << "OpenGL Version: " << glGetString(GL_VERSION);
+        }
+    };
 }
 
 void OMW::Engine::executeLocalScripts()
@@ -240,37 +263,6 @@ void OMW::Engine::executeLocalScripts()
     {
         MWScript::InterpreterContext interpreterContext (
             &script.second.getRefData().getLocals(), script.second);
-
-        /*
-            Start of tes3mp addition
-
-            By comparing its name with a list of script names, check if this script
-            is allowed to send packets about its value changes
-
-            If it is, set a tes3mp-only boolean to true in its interpreterContext
-        */
-        if (mwmp::Main::isValidPacketScript(script.first))
-        {
-            interpreterContext.sendPackets = true;
-        }
-        /*
-            End of tes3mp addition
-        */
-
-        /*
-            Start of tes3mp addition
-
-            Mark this InterpreterContext as having a SCRIPT_LOCAL context
-            and as currently running the script with this name, so that
-            packets sent by the Interpreter can have their
-            origin determined by serverside scripts
-        */
-        interpreterContext.trackContextType(Interpreter::Context::SCRIPT_LOCAL);
-        interpreterContext.trackCurrentScriptName(script.first);
-        /*
-            End of tes3mp addition
-        */
-
         mEnvironment.getScriptManager()->run (script.first, interpreterContext);
     }
 }
@@ -301,15 +293,7 @@ bool OMW::Engine::frame(float frametime)
             if (!mEnvironment.getWindowManager()->isWindowVisible())
             {
                 mEnvironment.getSoundManager()->pausePlayback();
-                /*
-                    Start of tes3mp change (major)
-
-                    The game cannot be paused in multiplayer, so prevent that from happening even here
-                */
-                //return false;
-                /*
-                    End of tes3mp change (major)
-                */
+                return false;
             }
             else
                 mEnvironment.getSoundManager()->resumePlayback();
@@ -319,29 +303,12 @@ bool OMW::Engine::frame(float frametime)
                 mEnvironment.getSoundManager()->update(frametime);
         }
 
-        /*
-            Start of tes3mp addition
-
-            Update multiplayer processing for the current frame
-        */
-        mwmp::Main::frame(frametime);
-        /*
-            End of tes3mp addition
-        */
-
         // Main menu opened? Then scripts are also paused.
         bool paused = mEnvironment.getWindowManager()->containsMode(MWGui::GM_MainMenu);
-        
-        /*
-            Start of tes3mp change (major)
 
-            Time should not be frozen in multiplayer, so the paused boolean is always set to
-            false instead
-        */
-        paused = false;
-        /*
-            End of tes3mp change (major)
-        */
+        // Should be called after input manager update and before any change to the game world.
+        // It applies to the game world queued changes from the previous frame.
+        mLuaManager->synchronizedUpdate();
 
         // update game state
         {
@@ -349,17 +316,7 @@ bool OMW::Engine::frame(float frametime)
             mEnvironment.getStateManager()->update (frametime);
         }
 
-        /*
-            Start of tes3mp change (major)
-
-            Whether the GUI is active should have no relevance in multiplayer, so the guiActive
-            boolean is always set to false instead
-        */
-        //bool guiActive = mEnvironment.getWindowManager()->isGuiMode();
-        bool guiActive = false;
-        /*
-            End of tes3mp change (major)
-        */
+        bool guiActive = mEnvironment.getWindowManager()->isGuiMode();
 
         {
             ScopedProfile<UserStatsType::Script> profile(frameStart, frameNumber, *timer, *stats);
@@ -401,17 +358,8 @@ bool OMW::Engine::frame(float frametime)
             if (mEnvironment.getStateManager()->getState() == MWBase::StateManager::State_Running)
             {
                 MWWorld::Ptr player = mEnvironment.getWorld()->getPlayerPtr();
-                /*
-                    Start of tes3mp change (major)
-
-                    In multiplayer, the game should not end when the player dies,
-                    so the code here has been commented out
-                */
-                //if(!guiActive && player.getClass().getCreatureStats(player).isDead())
-                //    mEnvironment.getStateManager()->endGame();
-                /*
-                    End of tes3mp change (major)
-                */
+                if(!guiActive && player.getClass().getCreatureStats(player).isDead())
+                    mEnvironment.getStateManager()->endGame();
             }
         }
 
@@ -476,6 +424,7 @@ OMW::Engine::Engine(Files::ConfigurationManager& configurationManager)
   , mExportFonts(false)
   , mRandomSeed(0)
   , mScriptContext (nullptr)
+  , mLuaManager (nullptr)
   , mFSStrict (false)
   , mScriptBlacklistUse (true)
   , mNewGame (false)
@@ -496,29 +445,10 @@ OMW::Engine::Engine(Files::ConfigurationManager& configurationManager)
 
 OMW::Engine::~Engine()
 {
-    /*
-        Start of tes3mp addition
-
-        Free up memory allocated by multiplayer's GUIController, but make sure
-        mwmp::Main has actually been initialized
-    */
-    if (mwmp::Main::isInitialized())
-        mwmp::Main::get().getGUIController()->cleanUp();
-    /*
-        End of tes3mp addition
-    */
+    if (mScreenCaptureOperation != nullptr)
+        mScreenCaptureOperation->stop();
 
     mEnvironment.cleanup();
-
-    /*
-        Start of tes3mp addition
-
-        Free up memory allocated by multiplayer's Main class
-    */
-    mwmp::Main::destroy();
-    /*
-        End of tes3mp addition
-    */
 
     delete mScriptContext;
     mScriptContext = nullptr;
@@ -539,16 +469,6 @@ OMW::Engine::~Engine()
     }
 
     SDL_Quit();
-
-    /*
-        Start of tes3mp addition
-
-        Free up memory allocated by multiplayer's logger
-    */
-    LOG_QUIT();
-    /*
-        End of tes3mp addition
-    */
 }
 
 void OMW::Engine::enableFSStrict(bool fsStrict)
@@ -621,6 +541,10 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
     if(fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN;
 
+    // Allows for Windows snapping features to properly work in borderless window
+    SDL_SetHint("SDL_BORDERLESS_WINDOWED_STYLE", "1");
+    SDL_SetHint("SDL_BORDERLESS_RESIZABLE_STYLE", "1");
+
     if (!windowBorder)
         flags |= SDL_WINDOW_BORDERLESS;
 
@@ -646,15 +570,7 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
     {
         while (!mWindow)
         {
-            /*
-                Start of tes3mp change (major)
-
-                Rename the window into TES3MP
-            */
-            mWindow = SDL_CreateWindow("TES3MP", pos_x, pos_y, width, height, flags);
-            /*
-                End of tes3mp change (major)
-            */
+            mWindow = SDL_CreateWindow("OpenMW", pos_x, pos_y, width, height, flags);
             if (!mWindow)
             {
                 // Try with a lower AA
@@ -717,8 +633,12 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
     camera->setGraphicsContext(graphicsWindow);
     camera->setViewport(0, 0, graphicsWindow->getTraits()->width, graphicsWindow->getTraits()->height);
 
+    osg::ref_ptr<SceneUtil::OperationSequence> realizeOperations = new SceneUtil::OperationSequence(false);
+    mViewer->setRealizeOperation(realizeOperations);
+    realizeOperations->add(new IdentifyOpenGLOperation());
+
     if (Debug::shouldDebugOpenGL())
-        mViewer->setRealizeOperation(new Debug::EnableGLDebugOperation());
+        realizeOperations->add(new Debug::EnableGLDebugOperation());
 
     mViewer->realize();
 
@@ -728,15 +648,7 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
 void OMW::Engine::setWindowIcon()
 {
     boost::filesystem::ifstream windowIconStream;
-    /*
-        Start of tes3mp change (major)
-
-        Use TES3MP's logo for the window icon
-    */
-    std::string windowIcon = (mResDir / "mygui" / "tes3mp_logo.png").string();
-    /*
-        End of tes3mp change (major)
-    */
+    std::string windowIcon = (mResDir / "mygui" / "openmw.png").string();
     windowIconStream.open(windowIcon, std::ios_base::in | std::ios_base::binary);
     if (windowIconStream.fail())
         Log(Debug::Error) << "Error: Failed to open " << windowIcon;
@@ -760,7 +672,7 @@ void OMW::Engine::setWindowIcon()
 void OMW::Engine::prepareEngine (Settings::Manager & settings)
 {
     mEnvironment.setStateManager (
-        new MWState::StateManager (mCfgMgr.getUserDataPath() / "saves", mContentFiles.at (0)));
+        new MWState::StateManager (mCfgMgr.getUserDataPath() / "saves", mContentFiles));
 
     createWindow(settings);
 
@@ -784,6 +696,24 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
     if (numThreads <= 0)
         throw std::runtime_error("Invalid setting: 'preload num threads' must be >0");
     mWorkQueue = new SceneUtil::WorkQueue(numThreads);
+
+    mScreenCaptureOperation = new SceneUtil::AsyncScreenCaptureOperation(
+        mWorkQueue,
+        new SceneUtil::WriteScreenshotToFileOperation(
+            mCfgMgr.getScreenshotPath().string(),
+            Settings::Manager::getString("screenshot format", "General"),
+            Settings::Manager::getBool("notify on saved screenshot", "General")
+                    ? std::function<void (std::string)>(ScheduleNonDialogMessageBox {})
+                    : std::function<void (std::string)>(IgnoreString {})
+        )
+    );
+
+    mScreenCaptureHandler = new osgViewer::ScreenCaptureHandler(mScreenCaptureOperation);
+
+    mViewer->addEventHandler(mScreenCaptureHandler);
+
+    mLuaManager = new MWLua::LuaManager(mVFS.get(), (mResDir / "lua_libs").string());
+    mEnvironment.setLuaManager(mLuaManager);
 
     // Create input and UI first to set up a bootstrapping environment for
     // showing a loading screen and keeping the window responsive while doing so
@@ -821,6 +751,34 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
     else
         gameControllerdb = ""; //if it doesn't exist, pass in an empty string
 
+    // gui needs our shaders path before everything else
+    mResourceSystem->getSceneManager()->setShaderPath((mResDir / "shaders").string());
+
+    osg::ref_ptr<osg::GLExtensions> exts = osg::GLExtensions::Get(0, false);
+    bool shadersSupported = exts && (exts->glslLanguageVersion >= 1.2f);
+    bool enableReverseZ = false;
+
+    if (Settings::Manager::getBool("reverse z", "Camera"))
+    {
+        if (exts && exts->isClipControlSupported)
+        {
+            enableReverseZ = true;
+            Log(Debug::Info) << "Using reverse-z depth buffer";
+        }
+        else
+            Log(Debug::Warning) << "GL_ARB_clip_control not supported: disabling reverse-z depth buffer";
+    }
+    else
+        Log(Debug::Info) << "Using standard depth buffer";
+
+    SceneUtil::AutoDepth::setReversed(enableReverseZ);
+
+#if OSG_VERSION_LESS_THAN(3, 6, 6)
+    // hack fix for https://github.com/openscenegraph/OpenSceneGraph/issues/1028
+    if (exts)
+        exts->glRenderbufferStorageMultisampleCoverageNV = nullptr;
+#endif
+
     std::string myguiResources = (mResDir / "mygui").string();
     osg::ref_ptr<osg::Group> guiRoot = new osg::Group;
     guiRoot->setName("GUI Root");
@@ -829,7 +787,7 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
     MWGui::WindowManager* window = new MWGui::WindowManager(mWindow, mViewer, guiRoot, mResourceSystem.get(), mWorkQueue.get(),
                 mCfgMgr.getLogPath().string() + std::string("/"), myguiResources,
                 mScriptConsoleMode, mTranslationDataStorage, mEncoding, mExportFonts,
-                Version::getOpenmwVersionDescription(mResDir.string()), mCfgMgr.getUserConfigPath().string());
+                Version::getOpenmwVersionDescription(mResDir.string()), mCfgMgr.getUserConfigPath().string(), shadersSupported);
     mEnvironment.setWindowManager (window);
 
     MWInput::InputManager* input = new MWInput::InputManager (mWindow, mViewer, mScreenCaptureHandler, mScreenCaptureOperation, keybinderUser, keybinderUserExists, userGameControllerdb, gameControllerdb, mGrab);
@@ -896,71 +854,95 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
                 << 100*static_cast<double> (result.second)/result.first
                 << "%)";
     }
+
+    mLuaManager->init();
+    mLuaManager->loadPermanentStorage(mCfgMgr.getUserConfigPath().string());
 }
 
-class WriteScreenshotToFileOperation : public osgViewer::ScreenCaptureHandler::CaptureOperation
+class OMW::Engine::LuaWorker
 {
 public:
-    WriteScreenshotToFileOperation(const std::string& screenshotPath, const std::string& screenshotFormat)
-        : mScreenshotPath(screenshotPath)
-        , mScreenshotFormat(screenshotFormat)
+    explicit LuaWorker(Engine* engine) : mEngine(engine)
     {
+        if (Settings::Manager::getInt("lua num threads", "Lua") > 0)
+            mThread = std::thread([this]{ threadBody(); });
+    };
+
+    void allowUpdate()
+    {
+        if (!mThread)
+            return;
+        {
+            std::lock_guard<std::mutex> lk(mMutex);
+            mUpdateRequest = true;
+        }
+        mCV.notify_one();
     }
 
-    void operator()(const osg::Image& image, const unsigned int context_id) override
+    void finishUpdate()
     {
-        // Count screenshots.
-        int shotCount = 0;
-
-        // Find the first unused filename with a do-while
-        std::ostringstream stream;
-        do
+        if (mThread)
         {
-            // Reset the stream
-            stream.str("");
-            stream.clear();
-
-            stream << mScreenshotPath << "/screenshot" << std::setw(3) << std::setfill('0') << shotCount++ << "." << mScreenshotFormat;
-
-        } while (boost::filesystem::exists(stream.str()));
-
-        boost::filesystem::ofstream outStream;
-        outStream.open(boost::filesystem::path(stream.str()), std::ios::binary);
-
-        osgDB::ReaderWriter* readerwriter = osgDB::Registry::instance()->getReaderWriterForExtension(mScreenshotFormat);
-        if (!readerwriter)
-        {
-            Log(Debug::Error) << "Error: Can't write screenshot, no '" << mScreenshotFormat << "' readerwriter found";
-            return;
+            std::unique_lock<std::mutex> lk(mMutex);
+            mCV.wait(lk, [&]{ return !mUpdateRequest; });
         }
+        else
+            update();
+    };
 
-        osgDB::ReaderWriter::WriteResult result = readerwriter->writeImage(image, outStream);
-        if (!result.success())
+    void join()
+    {
+        if (mThread)
         {
-            Log(Debug::Error) << "Error: Can't write screenshot: " << result.message() << " code " << result.status();
+            {
+                std::lock_guard<std::mutex> lk(mMutex);
+                mJoinRequest = true;
+            }
+            mCV.notify_one();
+            mThread->join();
         }
     }
 
 private:
-    std::string mScreenshotPath;
-    std::string mScreenshotFormat;
+    void update()
+    {
+        const auto& viewer = mEngine->mViewer;
+        const osg::Timer_t frameStart = viewer->getStartTick();
+        const unsigned int frameNumber = viewer->getFrameStamp()->getFrameNumber();
+        ScopedProfile<UserStatsType::Lua> profile(frameStart, frameNumber, *osg::Timer::instance(), *viewer->getViewerStats());
+
+        mEngine->mLuaManager->update();
+    }
+
+    void threadBody()
+    {
+        while (true)
+        {
+            std::unique_lock<std::mutex> lk(mMutex);
+            mCV.wait(lk, [&]{ return mUpdateRequest || mJoinRequest; });
+            if (mJoinRequest)
+                break;
+
+            update();
+
+            mUpdateRequest = false;
+            lk.unlock();
+            mCV.notify_one();
+        }
+    }
+
+    Engine* mEngine;
+    std::mutex mMutex;
+    std::condition_variable mCV;
+    bool mUpdateRequest = false;
+    bool mJoinRequest = false;
+    std::optional<std::thread> mThread;
 };
 
 // Initialise and enter main loop.
 void OMW::Engine::go()
 {
     assert (!mContentFiles.empty());
-
-    /*
-        Start of tes3mp change (major)
-
-        Attempt multiplayer initialization and proceed no further if it fails
-    */
-    if (!mwmp::Main::init(mContentFiles, mFileCollections))
-        return;
-    /*
-        End of tes3mp change (major)
-    */
 
     Log(Debug::Info) << "OSG version: " << osgGetVersion();
     SDL_version sdlVersion;
@@ -987,14 +969,6 @@ void OMW::Engine::go()
     mViewer->setUseConfigureAffinity(false);
 #endif
 
-    mScreenCaptureOperation = new WriteScreenshotToFileOperation(
-        mCfgMgr.getScreenshotPath().string(),
-        Settings::Manager::getString("screenshot format", "General"));
-
-    mScreenCaptureHandler = new osgViewer::ScreenCaptureHandler(mScreenCaptureOperation);
-
-    mViewer->addEventHandler(mScreenCaptureHandler);
-
     mEnvironment.setFrameRateLimit(Settings::Manager::getFloat("framerate limit", "Video"));
 
     prepareEngine (settings);
@@ -1008,26 +982,6 @@ void OMW::Engine::go()
         else
             Log(Debug::Warning) << "Failed to open file for stats: " << path;
     }
-
-    /*
-        Start of tes3mp addition
-
-        Handle post-initialization for multiplayer classes
-    */
-    mwmp::Main::postInit();
-    /*
-        End of tes3mp addition
-    */
-
-    /*
-        Start of tes3mp change (major)
-
-        Always skip the main menu in multiplayer
-    */
-    mSkipMenu = true;
-    /*
-        End of tes3mp change (major)
-    */
 
     // Setup profiler
     osg::ref_ptr<Resource::Profiler> statshandler = new Resource::Profiler(stats.is_open());
@@ -1066,6 +1020,8 @@ void OMW::Engine::go()
         mEnvironment.getWindowManager()->executeInConsole(mStartupScript);
     }
 
+    LuaWorker luaWorker(this);  // starts a separate lua thread if "lua num threads" > 0
+
     // Start the main rendering loop
     double simulationTime = 0.0;
     Misc::FrameRateLimiter frameRateLimiter = Misc::makeFrameRateLimiter(mEnvironment.getFrameRateLimit());
@@ -1091,21 +1047,13 @@ void OMW::Engine::go()
 
             mEnvironment.getWorld()->updateWindowManager();
 
+            luaWorker.allowUpdate();  // if there is a separate Lua thread, it starts the update now
+
             mViewer->renderingTraversals();
 
+            luaWorker.finishUpdate();
+
             bool guiActive = mEnvironment.getWindowManager()->isGuiMode();
-
-            /*
-                Start of tes3mp change (major)
-
-                Whether the GUI is active should have no relevance in multiplayer, so the guiActive
-                boolean is always set to false instead
-            */
-            guiActive = false;
-            /*
-                End of tes3mp change (major)
-            */
-
             if (!guiActive)
                 simulationTime += dt;
         }
@@ -1126,10 +1074,11 @@ void OMW::Engine::go()
         frameRateLimiter.limit();
     }
 
+    luaWorker.join();
+
     // Save user settings
     settings.saveUser(settingspath);
-
-    mViewer->stopThreading();
+    mLuaManager->savePermanentStorage(mCfgMgr.getUserConfigPath().string());
 
     Log(Debug::Info) << "Quitting peacefully.";
 }

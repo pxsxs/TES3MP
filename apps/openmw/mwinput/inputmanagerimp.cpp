@@ -3,9 +3,8 @@
 #include <osgViewer/ViewerEventHandlers>
 
 #include <components/sdlutil/sdlinputwrapper.hpp>
-
-#include <components/esm/esmwriter.hpp>
-#include <components/esm/esmreader.hpp>
+#include <components/esm3/esmwriter.hpp>
+#include <components/esm3/esmreader.hpp>
 
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/environment.hpp"
@@ -19,8 +18,8 @@
 #include "controlswitch.hpp"
 #include "keyboardmanager.hpp"
 #include "mousemanager.hpp"
-#include "sdlmappings.hpp"
 #include "sensormanager.hpp"
+#include "gyromanager.hpp"
 
 namespace MWInput
 {
@@ -53,6 +52,8 @@ namespace MWInput
 
         mSensorManager = new SensorManager();
         mInputWrapper->setSensorEventCallback(mSensorManager);
+
+        mGyroManager = new GyroManager();
     }
 
     void InputManager::clear()
@@ -74,6 +75,8 @@ namespace MWInput
         delete mBindingsManager;
 
         delete mInputWrapper;
+
+        delete mGyroManager;
     }
 
     void InputManager::setAttemptJump(bool jumping)
@@ -103,7 +106,16 @@ namespace MWInput
         mSensorManager->update(dt);
         mActionManager->update(dt, controllerMove);
 
-        MWBase::Environment::get().getWorld()->applyDeferredPreviewRotationToPlayer(dt);
+        if (mGyroManager->isEnabled())
+        {
+            bool controllerAvailable = mControllerManager->isGyroAvailable();
+            bool sensorAvailable = mSensorManager->isGyroAvailable();
+            if (controllerAvailable || sensorAvailable)
+            {
+                mGyroManager->update(dt,
+                    controllerAvailable ? mControllerManager->getGyroValues() : mSensorManager->getGyroValues());
+            }
+        }
     }
 
     void InputManager::setDragDrop(bool dragDrop)
@@ -120,7 +132,7 @@ namespace MWInput
     {
         mControllerManager->setGuiCursorEnabled(guiMode);
         mMouseManager->setGuiCursorEnabled(guiMode);
-        mSensorManager->setGuiCursorEnabled(guiMode);
+        mGyroManager->setGuiCursorEnabled(guiMode);
         mMouseManager->setMouseLookEnabled(!guiMode);
         if (guiMode)
             MWBase::Environment::get().getWindowManager()->showCrosshair(false);
@@ -134,14 +146,15 @@ namespace MWInput
     {
         mMouseManager->processChangedSettings(changed);
         mSensorManager->processChangedSettings(changed);
+        mGyroManager->processChangedSettings(changed);
     }
 
-    bool InputManager::getControlSwitch(const std::string& sw)
+    bool InputManager::getControlSwitch(std::string_view sw)
     {
         return mControlSwitch->get(sw);
     }
 
-    void InputManager::toggleControlSwitch(const std::string& sw, bool value)
+    void InputManager::toggleControlSwitch(std::string_view sw, bool value)
     {
         mControlSwitch->set(sw, value);
     }
@@ -151,19 +164,54 @@ namespace MWInput
         mActionManager->resetIdleTime();
     }
 
-    std::string InputManager::getActionDescription(int action)
+    bool InputManager::isIdle() const
+    {
+        return mActionManager->getIdleTime() > 0.5;
+    }
+
+    std::string InputManager::getActionDescription(int action) const
     {
         return mBindingsManager->getActionDescription(action);
     }
 
-    std::string InputManager::getActionKeyBindingName(int action)
+    std::string InputManager::getActionKeyBindingName(int action) const
     {
         return mBindingsManager->getActionKeyBindingName(action);
     }
 
-    std::string InputManager::getActionControllerBindingName(int action)
+    std::string InputManager::getActionControllerBindingName(int action) const
     {
         return mBindingsManager->getActionControllerBindingName(action);
+    }
+
+    bool InputManager::actionIsActive(int action) const
+    {
+        return mBindingsManager->actionIsActive(action);
+    }
+
+    float InputManager::getActionValue(int action) const
+    {
+        return mBindingsManager->getActionValue(action);
+    }
+
+    bool InputManager::isControllerButtonPressed(SDL_GameControllerButton button) const
+    {
+        return mControllerManager->isButtonPressed(button);
+    }
+
+    float InputManager::getControllerAxisValue(SDL_GameControllerAxis axis) const
+    {
+        return mControllerManager->getAxisValue(axis);
+    }
+
+    int InputManager::getMouseMoveX() const
+    {
+        return mMouseManager->getMouseMoveX();
+    }
+
+    int InputManager::getMouseMoveY() const
+    {
+        return mMouseManager->getMouseMoveY();
     }
 
     std::vector<int> InputManager::getActionKeySorting()
