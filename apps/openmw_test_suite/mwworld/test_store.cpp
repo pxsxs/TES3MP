@@ -63,6 +63,7 @@ struct ContentFileTest : public ::testing::Test
         ("content", boost::program_options::value<Files::EscapeStringVector>()->default_value(Files::EscapeStringVector(), "")
             ->multitoken()->composing(), "content file(s): esm/esp, or omwgame/omwaddon")
         ("data-local", boost::program_options::value<Files::EscapePath>()->default_value(Files::EscapePath(), ""));
+        Files::ConfigurationManager::addCommonOptions(desc);
 
         boost::program_options::notify(variables);
 

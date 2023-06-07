@@ -9,6 +9,11 @@
 #include <osg/Vec2f>
 #include <osg/Vec3f>
 
+namespace Files
+{
+    struct ConfigurationManager;
+}
+
 namespace Settings
 {
     ///
@@ -31,14 +36,8 @@ namespace Settings
 
             Add a base64encoded argument to this function to allow unencoded files to still be opened
         */
-        void loadDefault (const std::string& file, bool base64encoded = true);
-        ///< load file as the default settings (can be overridden by user settings)
-        /*
-            End of tes3mp change (major)
-        */
-
-        void loadUser (const std::string& file);
-        ///< load file as user settings
+        std::string load(const Files::ConfigurationManager& cfgMgr);
+        ///< load settings from all active config dirs. Returns the path of the last loaded file.
 
         void saveUser (const std::string& file);
         ///< save user settings to file

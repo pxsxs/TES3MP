@@ -167,6 +167,8 @@ bool parseOptions (int argc, char** argv, OMW::Engine& engine, Files::Configurat
     bpo::parsed_options valid_opts = bpo::command_line_parser(argc, argv)
         .options(desc).allow_unregistered().run();
 
+    Files::ConfigurationManager::addCommonOptions(desc);
+
     bpo::variables_map variables;
 
     // Runtime options override settings from all configs
@@ -188,9 +190,9 @@ bool parseOptions (int argc, char** argv, OMW::Engine& engine, Files::Configurat
         return false;
     }
 
-    bpo::variables_map composingVariables = cfgMgr.separateComposingVariables(variables, desc);
     cfgMgr.readConfiguration(variables, desc);
-    cfgMgr.mergeComposingVariables(variables, composingVariables, desc);
+
+    setupLogging(cfgMgr.getLogPath().string(), "OpenMW");
 
     Version::Version v = Version::getOpenmwVersion(variables["resources"].as<Files::EscapePath>().mPath.string());
 
@@ -408,7 +410,7 @@ int main(int argc, char**argv)
         Instead of logging information in openmw.log, use a more descriptive filename
         that includes a timestamp
     */
-    return wrapApplication(&runApplication, argc, argv, "/tes3mp-client-" + TimedLog::getFilenameTimestamp());
+    return wrapApplication(&runApplication, argc, argv, "/tes3mp-client-" + TimedLog::getFilenameTimestamp(), false);
     /*
         End of tes3mp change (major)
     */

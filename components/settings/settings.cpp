@@ -3,6 +3,7 @@
 
 #include <sstream>
 
+#include <components/files/configurationmanager.hpp>
 #include <components/misc/stringops.hpp>
 
 namespace Settings
@@ -24,19 +25,36 @@ void Manager::clear()
 
     Add a base64encoded argument to this function to allow unencoded files to still be opened
 */
-void Manager::loadDefault(const std::string &file, bool base64encoded)
+std::string Manager::load(const Files::ConfigurationManager& cfgMgr)
 {
     SettingsFileParser parser;
-    parser.loadSettingsFile(file, mDefaultSettings, base64encoded);
-}
+    const std::vector<boost::filesystem::path>& paths = cfgMgr.getActiveConfigPaths();
+    if (paths.empty())
+        throw std::runtime_error("No config dirs! ConfigurationManager::readConfiguration must be called first.");
+
+    // Create the settings manager and load default settings file.
+    const std::string defaultsBin = (paths.front() / "defaults.bin").string();
+    if (!boost::filesystem::exists(defaultsBin))
+        throw std::runtime_error ("No default settings file found! Make sure the file \"defaults.bin\" was properly installed.");
+    parser.loadSettingsFile(defaultsBin, mDefaultSettings, true, false);
+
+    // Load "settings.cfg" from every config dir except the last one as additional default settings.
+    for (int i = 0; i < static_cast<int>(paths.size()) - 1; ++i)
+    {
+        const std::string additionalDefaults = (paths[i] / "settings.cfg").string();
+        if (boost::filesystem::exists(additionalDefaults))
+            parser.loadSettingsFile(additionalDefaults, mDefaultSettings, false, true);
+    }
 /*
     End of tes3mp change (major)
 */
 
-void Manager::loadUser(const std::string &file)
-{
-    SettingsFileParser parser;
-    parser.loadSettingsFile(file, mUserSettings);
+    // Load "settings.cfg" from the last config as user settings if they exist. This path will be used to save modified settings.
+    std::string settingspath = (paths.back() / "settings.cfg").string();
+    if (boost::filesystem::exists(settingspath))
+        parser.loadSettingsFile(settingspath, mUserSettings, false, false);
+
+    return settingspath;
 }
 
 void Manager::saveUser(const std::string &file)
