@@ -59,29 +59,6 @@ std::string Main::getResDir()
     return resourceDir;
 }
 
-std::string loadSettings(Settings::Manager& settings)
-{
-    Files::ConfigurationManager mCfgMgr;
-    // Create the settings manager and load default settings file
-    const std::string localdefault = (mCfgMgr.getLocalPath() / "tes3mp-client-default.cfg").string();
-    const std::string globaldefault = (mCfgMgr.getGlobalPath() / "tes3mp-client-default.cfg").string();
-
-    // prefer local
-    if (boost::filesystem::exists(localdefault))
-        settings.loadDefault(localdefault, false);
-    else if (boost::filesystem::exists(globaldefault))
-        settings.loadDefault(globaldefault, false);
-    else
-        throw std::runtime_error ("No default settings file found! Make sure the file \"tes3mp-client-default.cfg\" was properly installed.");
-
-    // load user settings if they exist
-    const std::string settingspath = (mCfgMgr.getUserConfigPath() / "tes3mp-client.cfg").string();
-    if (boost::filesystem::exists(settingspath))
-        settings.loadUser(settingspath);
-
-    return settingspath;
-}
-
 Main::Main()
 {
     LOG_MESSAGE_SIMPLE(TimedLog::LOG_INFO, "tes3mp started");
