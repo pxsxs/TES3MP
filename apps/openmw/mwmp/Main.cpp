@@ -106,7 +106,7 @@ bool Main::init(std::vector<std::string> &content, Files::Collections &collectio
     pMain = new Main();
 
     Settings::Manager manager;
-    loadSettings(manager);
+    settings.load(mCfgMgr);
 
     int logLevel = manager.getInt("logLevel", "General");
     TimedLog::SetLevel(logLevel);
